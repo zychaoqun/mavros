@@ -3,3 +3,4 @@ This file needed for manually start coverity_scan via travis.
 Just add change here:
 1. test remove boost from check
 2. check ctor init
+3. check param iterator
