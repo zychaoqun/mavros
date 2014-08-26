@@ -78,6 +78,7 @@ add_service_files(
    WaypointPush.srv
    WaypointGOTO.srv
    CommandLong.srv
+   CommandInt.srv
    CommandBool.srv
    CommandMode.srv
    CommandHome.srv
@@ -241,11 +242,9 @@ target_link_libraries(gcs_bridge
 
 ## Mark executable scripts (Python etc.) for installation
 ## in contrast to setup.py, you can choose the destination
+file(GLOB SCRIPTS ${PROJECT_SOURCE_DIR}/scripts/*)
 install(PROGRAMS
-  scripts/mavparam
-  scripts/mavwp
-  scripts/mavsafety
-  scripts/mavcmd
+  ${SCRIPTS}
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 
