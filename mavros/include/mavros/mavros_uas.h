@@ -3,7 +3,7 @@
  * @file mavros_plugin.h
  * @author Vladimir Ermakov <vooon341@gmail.com>
  *
- * @addtogroup plugin
+ * @addtogroup nodelib
  * @{
  */
 /*
@@ -31,9 +31,7 @@
 #include <tf/transform_datatypes.h>
 #include <mavros/mavconn_interface.h>
 
-namespace mavplugin {
-typedef std::lock_guard<std::recursive_mutex> lock_guard;
-typedef std::unique_lock<std::recursive_mutex> unique_lock;
+namespace mavros {
 
 /**
  * @brief helper accessor to FCU link interface
@@ -65,6 +63,9 @@ typedef std::unique_lock<std::recursive_mutex> unique_lock;
  */
 class UAS {
 public:
+	typedef std::lock_guard<std::recursive_mutex> lock_guard;
+	typedef std::unique_lock<std::recursive_mutex> unique_lock;
+
 	UAS();
 	~UAS() {};
 
@@ -259,6 +260,26 @@ public:
 	 */
 	boost::shared_ptr<mavconn::MAVConnInterface> fcu_link;
 
+
+	/**
+	 * Port pymavlink mavutil.mode_string_v10
+	 *
+	 * Support FCU's:
+	 * - APM:Plane
+	 * - APM:Copter
+	 * - PX4
+	 */
+	std::string str_mode_v10(int base_mode, int custom_mode);
+
+	/**
+	 * Lookup custom mode for given string
+	 *
+	 * Complimentary to @a str_mode_v10()
+	 *
+	 * @return true if success
+	 */
+	bool cmode_from_str(std::string cmode_str, uint32_t &custom_mode);
+
 private:
 	std::recursive_mutex mutex;
 	std::atomic<uint8_t> type;
@@ -277,4 +298,4 @@ private:
 	std::atomic<bool> fix_status;
 };
 
-}; // namespace mavplugin
+}; // namespace mavros
