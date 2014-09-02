@@ -13,6 +13,7 @@ find_package(catkin REQUIRED COMPONENTS
   roscpp
   sensor_msgs
   std_msgs
+  std_srvs
   tf
   angles
 )
@@ -67,6 +68,8 @@ add_message_files(
   RCOut.msg
   RadioStatus.msg
   OverrideRCIn.msg
+  VFR_HUD.msg
+  FileEntry.msg
 )
 
 ## Generate services in the 'srv' folder
@@ -88,6 +91,12 @@ add_service_files(
   CommandTOL.srv
   StreamRate.srv
   SetMode.srv
+  FileOpen.srv
+  FileClose.srv
+  FileRead.srv
+  FileWrite.srv
+  FileList.srv
+  FileRemove.srv
 )
 
 ## Generate actions in the 'action' folder
@@ -185,6 +194,8 @@ add_library(mavros_plugins
   src/plugins/setpoint_velocity.cpp
   src/plugins/setpoint_accel.cpp
   src/plugins/setpoint_attitude.cpp
+  src/plugins/vfr_hud.cpp
+  src/plugins/ftp.cpp
 )
 add_dependencies(mavros_plugins
   mavros
