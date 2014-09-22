@@ -1,9 +1,9 @@
-# FTP::Remove
+# FTP::MakeDir
 #
 # :success:	indicates success end of request
 # :r_errno:	remote errno if applicapable
 
-string file_path
+string dir_path
 ---
 bool success
 int32 r_errno

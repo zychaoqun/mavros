@@ -1,9 +1,10 @@
-# FTP::Remove
+# FTP::Truncate
 #
 # :success:	indicates success end of request
 # :r_errno:	remote errno if applicapable
 
 string file_path
+uint64 length
 ---
 bool success
 int32 r_errno

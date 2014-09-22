@@ -25,6 +25,7 @@
  */
 
 #include <chrono>
+#include <cerrno>
 #include <condition_variable>
 #include <mavros/mavros_plugin.h>
 #include <pluginlib/class_list_macros.h>
@@ -35,69 +36,18 @@
 #include <mavros/FileOpen.h>
 #include <mavros/FileClose.h>
 #include <mavros/FileRead.h>
+#include <mavros/FileWrite.h>
+#include <mavros/FileRemove.h>
+#include <mavros/FileMakeDir.h>
+#include <mavros/FileRemoveDir.h>
+#include <mavros/FileTruncate.h>
+#include <mavros/FileRename.h>
+#include <mavros/FileChecksum.h>
+
+// enable debugging messages
+//#define FTP_LL_DEBUG
 
 namespace mavplugin {
-
-// XXX: crc32() copy from NuttX lib_crc32.c
-static const uint32_t crc32_tab[] =
-{
-  0x00000000, 0x77073096, 0xee0e612c, 0x990951ba, 0x076dc419, 0x706af48f, 0xe963a535, 0x9e6495a3,
-  0x0edb8832, 0x79dcb8a4, 0xe0d5e91e, 0x97d2d988, 0x09b64c2b, 0x7eb17cbd, 0xe7b82d07, 0x90bf1d91,
-  0x1db71064, 0x6ab020f2, 0xf3b97148, 0x84be41de, 0x1adad47d, 0x6ddde4eb, 0xf4d4b551, 0x83d385c7,
-  0x136c9856, 0x646ba8c0, 0xfd62f97a, 0x8a65c9ec, 0x14015c4f, 0x63066cd9, 0xfa0f3d63, 0x8d080df5,
-  0x3b6e20c8, 0x4c69105e, 0xd56041e4, 0xa2677172, 0x3c03e4d1, 0x4b04d447, 0xd20d85fd, 0xa50ab56b,
-  0x35b5a8fa, 0x42b2986c, 0xdbbbc9d6, 0xacbcf940, 0x32d86ce3, 0x45df5c75, 0xdcd60dcf, 0xabd13d59,
-  0x26d930ac, 0x51de003a, 0xc8d75180, 0xbfd06116, 0x21b4f4b5, 0x56b3c423, 0xcfba9599, 0xb8bda50f,
-  0x2802b89e, 0x5f058808, 0xc60cd9b2, 0xb10be924, 0x2f6f7c87, 0x58684c11, 0xc1611dab, 0xb6662d3d,
-  0x76dc4190, 0x01db7106, 0x98d220bc, 0xefd5102a, 0x71b18589, 0x06b6b51f, 0x9fbfe4a5, 0xe8b8d433,
-  0x7807c9a2, 0x0f00f934, 0x9609a88e, 0xe10e9818, 0x7f6a0dbb, 0x086d3d2d, 0x91646c97, 0xe6635c01,
-  0x6b6b51f4, 0x1c6c6162, 0x856530d8, 0xf262004e, 0x6c0695ed, 0x1b01a57b, 0x8208f4c1, 0xf50fc457,
-  0x65b0d9c6, 0x12b7e950, 0x8bbeb8ea, 0xfcb9887c, 0x62dd1ddf, 0x15da2d49, 0x8cd37cf3, 0xfbd44c65,
-  0x4db26158, 0x3ab551ce, 0xa3bc0074, 0xd4bb30e2, 0x4adfa541, 0x3dd895d7, 0xa4d1c46d, 0xd3d6f4fb,
-  0x4369e96a, 0x346ed9fc, 0xad678846, 0xda60b8d0, 0x44042d73, 0x33031de5, 0xaa0a4c5f, 0xdd0d7cc9,
-  0x5005713c, 0x270241aa, 0xbe0b1010, 0xc90c2086, 0x5768b525, 0x206f85b3, 0xb966d409, 0xce61e49f,
-  0x5edef90e, 0x29d9c998, 0xb0d09822, 0xc7d7a8b4, 0x59b33d17, 0x2eb40d81, 0xb7bd5c3b, 0xc0ba6cad,
-  0xedb88320, 0x9abfb3b6, 0x03b6e20c, 0x74b1d29a, 0xead54739, 0x9dd277af, 0x04db2615, 0x73dc1683,
-  0xe3630b12, 0x94643b84, 0x0d6d6a3e, 0x7a6a5aa8, 0xe40ecf0b, 0x9309ff9d, 0x0a00ae27, 0x7d079eb1,
-  0xf00f9344, 0x8708a3d2, 0x1e01f268, 0x6906c2fe, 0xf762575d, 0x806567cb, 0x196c3671, 0x6e6b06e7,
-  0xfed41b76, 0x89d32be0, 0x10da7a5a, 0x67dd4acc, 0xf9b9df6f, 0x8ebeeff9, 0x17b7be43, 0x60b08ed5,
-  0xd6d6a3e8, 0xa1d1937e, 0x38d8c2c4, 0x4fdff252, 0xd1bb67f1, 0xa6bc5767, 0x3fb506dd, 0x48b2364b,
-  0xd80d2bda, 0xaf0a1b4c, 0x36034af6, 0x41047a60, 0xdf60efc3, 0xa867df55, 0x316e8eef, 0x4669be79,
-  0xcb61b38c, 0xbc66831a, 0x256fd2a0, 0x5268e236, 0xcc0c7795, 0xbb0b4703, 0x220216b9, 0x5505262f,
-  0xc5ba3bbe, 0xb2bd0b28, 0x2bb45a92, 0x5cb36a04, 0xc2d7ffa7, 0xb5d0cf31, 0x2cd99e8b, 0x5bdeae1d,
-  0x9b64c2b0, 0xec63f226, 0x756aa39c, 0x026d930a, 0x9c0906a9, 0xeb0e363f, 0x72076785, 0x05005713,
-  0x95bf4a82, 0xe2b87a14, 0x7bb12bae, 0x0cb61b38, 0x92d28e9b, 0xe5d5be0d, 0x7cdcefb7, 0x0bdbdf21,
-  0x86d3d2d4, 0xf1d4e242, 0x68ddb3f8, 0x1fda836e, 0x81be16cd, 0xf6b9265b, 0x6fb077e1, 0x18b74777,
-  0x88085ae6, 0xff0f6a70, 0x66063bca, 0x11010b5c, 0x8f659eff, 0xf862ae69, 0x616bffd3, 0x166ccf45,
-  0xa00ae278, 0xd70dd2ee, 0x4e048354, 0x3903b3c2, 0xa7672661, 0xd06016f7, 0x4969474d, 0x3e6e77db,
-  0xaed16a4a, 0xd9d65adc, 0x40df0b66, 0x37d83bf0, 0xa9bcae53, 0xdebb9ec5, 0x47b2cf7f, 0x30b5ffe9,
-  0xbdbdf21c, 0xcabac28a, 0x53b39330, 0x24b4a3a6, 0xbad03605, 0xcdd70693, 0x54de5729, 0x23d967bf,
-  0xb3667a2e, 0xc4614ab8, 0x5d681b02, 0x2a6f2b94, 0xb40bbe37, 0xc30c8ea1, 0x5a05df1b, 0x2d02ef8d
-};
-
-/************************************************************************************************
- * Public Functions
- ************************************************************************************************/
-/************************************************************************************************
- * Name: crc32part
- *
- * Description:
- *   Continue CRC calculation on a part of the buffer.
- *
- ************************************************************************************************/
-
-uint32_t crc32part(const uint8_t *src, size_t len, uint32_t crc32val)
-{
-  size_t i;
-
-  for (i = 0;  i < len;  i++)
-    {
-      crc32val = crc32_tab[(crc32val ^ src[i]) & 0xff] ^ (crc32val >> 8);
-    }
-  return crc32val;
-}
-// XXX: end
-
 
 /**
  * @brief FTP Request message abstraction class
@@ -113,48 +63,49 @@ public:
 		uint8_t		session;	///< Session id for read and write commands
 		uint8_t		opcode;		///< Command opcode
 		uint8_t		size;		///< Size of data
-		uint8_t		padding[3];	///< 32 bit aligment padding
-		uint32_t	crc32;		///< CRC for entire Request structure, with crc32 and padding set to 0
+		uint8_t		req_opcode;	///< Request opcode returned in kRspAck, kRspNak message
+		uint8_t		padding[2];	///< 32 bit aligment padding
 		uint32_t	offset;		///< Offsets for List and Read commands
 		uint8_t		data[];		///< command data, varies by Opcode
 	};
 
 	/// @brief Command opcodes
 	enum Opcode : uint8_t {
-		kCmdNone,	///< ignored, always acked
-		kCmdTerminate,	///< Terminates open Read session
-		kCmdReset,	///< Terminates all open Read sessions
-		kCmdList,	///< List files in <path> from <offset>
-		kCmdOpen,	///< Opens <path> for reading, returns <session>
-		kCmdRead,	///< Reads <size> bytes from <offset> in <session>
-		kCmdCreate,	///< Creates <path> for writing, returns <session>
-		kCmdWrite,	///< Appends <size> bytes at <offset> in <session>
-		kCmdRemove,	///< Remove file
+		kCmdNone,		///< ignored, always acked
+		kCmdTerminateSession,	///< Terminates open Read session
+		kCmdResetSessions,	///< Terminates all open Read sessions
+		kCmdListDirectory,	///< List files in <path> from <offset>
+		kCmdOpenFileRO,		///< Opens file at <path> for reading, returns <session>
+		kCmdReadFile,		///< Reads <size> bytes from <offset> in <session>
+		kCmdCreateFile,		///< Creates file at <path> for writing, returns <session>
+		kCmdWriteFile,		///< Writes <size> bytes to <offset> in <session>
+		kCmdRemoveFile,		///< Remove file at <path>
+		kCmdCreateDirectory,	///< Creates directory at <path>
+		kCmdRemoveDirectory,	///< Removes Directory at <path>, must be empty
+		kCmdOpenFileWO,		///< Opens file at <path> for writing, returns <session>
+		kCmdTruncateFile,	///< Truncate file at <path> to <offset> length
+		kCmdRename,		///< Rename <path1> to <path2>
+		kCmdCalcFileCRC32,	///< Calculate CRC32 for file at <path>
 
-		kRspAck,	///< Ack response
-		kRspNak		///< Nak response
+		kRspAck = 128,		///< Ack response
+		kRspNak			///< Nak response
 	};
 
 	/// @brief Error codes returned in Nak response.
 	enum ErrorCode : uint8_t {
 		kErrNone,
-		kErrNoRequest,
-		kErrNoSession,
-		kErrSequence,
-		kErrNotDir,
-		kErrNotFile,
-		kErrEOF,
-		kErrNotAppend,
-		kErrTooBig,
-		kErrIO,
-		kErrPerm,
-		kErrUnknownCommand,
-		kErrCrc
-        };
+		kErrFail,			///< Unknown failure
+		kErrFailErrno,			///< Command failed, errno sent back in PayloadHeader.data[1]
+		kErrInvalidDataSize,		///< PayloadHeader.size is invalid
+		kErrInvalidSession,		///< Session is not currently open
+		kErrNoSessionsAvailable,	///< All available Sessions in use
+		kErrEOF,			///< Offset past end of file for List and Read commands
+		kErrUnknownCommand		///< Unknown command opcode
+	};
 
 	static const char	DIRENT_FILE = 'F';
 	static const char	DIRENT_DIR = 'D';
-	static const char	DIRENT_UNKNOWN = 'U';
+	static const char	DIRENT_SKIP = 'S';
 	static const uint8_t	DATA_MAXSZ = MAVLINK_MSG_FILE_TRANSFER_PROTOCOL_FIELD_PAYLOAD_LEN - sizeof(PayloadHeader);
 
 	uint8_t *raw_payload() {
@@ -177,20 +128,19 @@ public:
 		return reinterpret_cast<uint32_t *>(header()->data);
 	}
 
-	char *data_c_str() {
-
-		// force null-termination
-		if (header()->size < DATA_MAXSZ)
-			data()[header()->size] = '\0';
-		else
-			data()[DATA_MAXSZ - 1] = '\0';
-
-		return data_c();
-	}
-
+	/**
+	 * @brief Copy string to payload
+	 *
+	 * @param[in] s  payload string
+	 * @note this function allow null termination inside string
+	 *       it used to send multiple strings in one message
+	 */
 	void set_data_string(std::string &s) {
-		strncpy(data_c(), s.c_str(), DATA_MAXSZ - 1);
-		header()->size = strnlen(data_c(), DATA_MAXSZ);
+		size_t sz = (s.size() < DATA_MAXSZ - 1)? s.size() : DATA_MAXSZ - 1;
+
+		memcpy(data_c(), s.c_str(), sz);
+		data_c()[sz] = '\0';
+		header()->size = sz;
 	}
 
 	uint8_t get_target_system_id() {
@@ -203,19 +153,11 @@ public:
 	bool decode(UAS *uas, const mavlink_message_t *msg) {
 		mavlink_msg_file_transfer_protocol_decode(msg, &message);
 
-		// XXX: crc debug
+#ifdef FTP_LL_DEBUG
 		auto hdr = header();
-		uint32_t mcrc = hdr->crc32;
-		hdr->crc32 = 0;
-		hdr->padding[0] = 0;
-		hdr->padding[1] = 0;
-		hdr->padding[2] = 0;
-		hdr->crc32 = crc32part(raw_payload(), hdr->size + sizeof(PayloadHeader), 0);
-
-		ROS_DEBUG_NAMED("ftp", "FTP:rm: SEQ(%u) SESS(%u) OPCODE(%u) SZ(%u) OFF(%u) CRC(0x%08x : 0x%08x)",
-				hdr->seqNumber, hdr->session, hdr->opcode, hdr->size, hdr->offset,
-				mcrc, hdr->crc32);
-		// XXX: end
+		ROS_DEBUG_NAMED("ftp", "FTP:rm: SEQ(%u) SESS(%u) OPCODE(%u) RQOP(%u) SZ(%u) OFF(%u)",
+				hdr->seqNumber, hdr->session, hdr->opcode, hdr->req_opcode, hdr->size, hdr->offset);
+#endif
 
 		return UAS_FCU(uas)->get_system_id() == message.target_system;
 	}
@@ -226,18 +168,14 @@ public:
 	void send(UAS *uas, uint16_t seqNumber) {
 		mavlink_message_t msg;
 
-		// XXX: crc calc
 		auto hdr = header();
 		hdr->seqNumber = seqNumber;
-		hdr->crc32 = 0;
-		hdr->padding[0] = 0;
-		hdr->padding[1] = 0;
-		hdr->padding[2] = 0;
-		hdr->crc32 = crc32part(raw_payload(), hdr->size + sizeof(PayloadHeader), 0);
+		hdr->req_opcode = kCmdNone;
 
-		ROS_DEBUG_NAMED("ftp", "FTP:sm: SEQ(%u) SESS(%u) OPCODE(%u) SZ(%u) OFF(%u) CRC(0x%08x)",
-				hdr->seqNumber, hdr->session, hdr->opcode, hdr->size, hdr->offset, hdr->crc32);
-		// XXX: end
+#ifdef FTP_LL_DEBUG
+		ROS_DEBUG_NAMED("ftp", "FTP:sm: SEQ(%u) SESS(%u) OPCODE(%u) SZ(%u) OFF(%u)",
+				hdr->seqNumber, hdr->session, hdr->opcode, hdr->size, hdr->offset);
+#endif
 
 		mavlink_msg_file_transfer_protocol_pack_chan(UAS_PACK_CHAN(uas), &msg,
 				0, // target_network
@@ -292,7 +230,14 @@ public:
 		open_srv = ftp_nh.advertiseService("open", &FTPPlugin::open_cb, this);
 		close_srv = ftp_nh.advertiseService("close", &FTPPlugin::close_cb, this);
 		read_srv = ftp_nh.advertiseService("read", &FTPPlugin::read_cb, this);
+		write_srv = ftp_nh.advertiseService("write", &FTPPlugin::write_cb, this);
+		mkdir_srv = ftp_nh.advertiseService("mkdir", &FTPPlugin::mkdir_cb, this);
+		rmdir_srv = ftp_nh.advertiseService("rmdir", &FTPPlugin::rmdir_cb, this);
+		remove_srv = ftp_nh.advertiseService("remove", &FTPPlugin::remove_cb, this);
+		truncate_srv = ftp_nh.advertiseService("truncate", &FTPPlugin::truncate_cb, this);
 		reset_srv = ftp_nh.advertiseService("reset", &FTPPlugin::reset_cb, this);
+		rename_srv = ftp_nh.advertiseService("rename", &FTPPlugin::rename_cb, this);
+		checksum_srv = ftp_nh.advertiseService("checksum", &FTPPlugin::checksum_cb, this);
 	}
 
 	std::string const get_name() const {
@@ -312,24 +257,36 @@ private:
 	ros::ServiceServer open_srv;
 	ros::ServiceServer close_srv;
 	ros::ServiceServer read_srv;
+	ros::ServiceServer write_srv;
+	ros::ServiceServer mkdir_srv;
+	ros::ServiceServer rmdir_srv;
+	ros::ServiceServer remove_srv;
+	ros::ServiceServer rename_srv;
+	ros::ServiceServer truncate_srv;
 	ros::ServiceServer reset_srv;
+	ros::ServiceServer checksum_srv;
+
+	//! This type used in servicies to store 'data' fileds.
+	typedef std::vector<uint8_t> V_FileData;
 
 	enum OpState {
 		OP_IDLE,
 		OP_ACK,
 		OP_LIST,
 		OP_OPEN,
-		OP_READ
-		// TODO other functions
+		OP_READ,
+		OP_WRITE,
+		OP_CHECKSUM
 	};
 
 	OpState op_state;
-	uint16_t last_send_seqnr;
-	uint32_t active_session;
+	uint16_t last_send_seqnr;	//!< seqNumber for send.
+	uint32_t active_session;	//!< session id of current operation
 
 	std::mutex cond_mutex;
 	std::condition_variable cond;	//!< wait condvar
 	bool is_error;			//!< error signaling flag (timeout/proto error)
+	int r_errno;			//!< store errno from server
 
 	// FTP:List
 	uint32_t list_offset;
@@ -344,20 +301,28 @@ private:
 	// FTP:Read
 	size_t read_size;
 	uint32_t read_offset;
-	std::vector<uint8_t> read_buffer;
+	V_FileData read_buffer;
 
-	// FTP:Write not implemented in FW
+	// FTP:Write
+	uint32_t write_offset;
+	V_FileData write_buffer;
+	V_FileData::iterator write_it;
 
-	// Timeouts
-	static constexpr int LIST_TIMEOUT_MS = 15000;
-	static constexpr int OPEN_TIMEOUT_MS = 500;
-	static constexpr int CHUNK_TIMEOUT_MS = 500;
+	// FTP:CalcCRC32
+	uint32_t checksum_crc32;
+
+	// Timeouts,
+	// computed as x4 time that needed for transmission of
+	// one message at 57600 baud rate
+	static constexpr int LIST_TIMEOUT_MS = 5000;
+	static constexpr int OPEN_TIMEOUT_MS = 200;
+	static constexpr int CHUNK_TIMEOUT_MS = 200;
 
 	//! Maximum difference between allocated space and used
 	static constexpr size_t MAX_RESERVE_DIFF = 0x10000;
 
-	//! @todo timeout timer
-	//! @todo write support
+	//! @todo exchange speed calculation
+	//! @todo diagnostics
 
 	/* -*- message handler -*- */
 
@@ -369,14 +334,12 @@ private:
 			return;
 		}
 
-		// Note crc32 check skipped
-
 		const uint16_t incoming_seqnr = req.header()->seqNumber;
 		const uint16_t expected_seqnr = last_send_seqnr + 1;
 		if (incoming_seqnr != expected_seqnr) {
 			ROS_WARN_NAMED("ftp", "FTP: Lost sync! seqnr: %u != %u",
 					incoming_seqnr, expected_seqnr);
-			go_idle(true);
+			go_idle(true, EILSEQ);
 			return;
 		}
 
@@ -387,43 +350,62 @@ private:
 			handle_req_ack(req);
 		else if (req.header()->opcode == FTPRequest::kRspNak)
 			handle_req_nack(req);
-		else
+		else {
 			ROS_ERROR_NAMED("ftp", "FTP: Unknown request response: %u", req.header()->opcode);
+			go_idle(true, EBADRQC);
+		}
 	}
 
 	void handle_req_ack(FTPRequest &req) {
 		switch (op_state) {
-		case OP_IDLE: send_reset();		break;
-		case OP_ACK:  go_idle(false);		break;
-		case OP_LIST: handle_ack_list(req);	break;
-		case OP_OPEN: handle_ack_open(req);	break;
-		case OP_READ: handle_ack_read(req);	break;
+		case OP_IDLE:		send_reset();			break;
+		case OP_ACK:		go_idle(false);			break;
+		case OP_LIST:		handle_ack_list(req);		break;
+		case OP_OPEN:		handle_ack_open(req);		break;
+		case OP_READ:		handle_ack_read(req);		break;
+		case OP_WRITE:		handle_ack_write(req);		break;
+		case OP_CHECKSUM:	handle_ack_checksum(req);	break;
 		default:
 			ROS_ERROR_NAMED("ftp", "FTP: wrong op_state");
-			go_idle(true);
+			go_idle(true, EBADRQC);
 		}
 	}
 
 	void handle_req_nack(FTPRequest &req) {
-		ROS_ASSERT(req.header()->size == 1);
-
-		uint8_t error = req.data()[0];
+		auto hdr = req.header();
+		auto error_code = static_cast<FTPRequest::ErrorCode>(req.data()[0]);
 		OpState prev_op = op_state;
 
-		op_state = OP_IDLE;
+		ROS_ASSERT(hdr->size == 1 || (error_code == FTPRequest::kErrFailErrno && hdr->size == 2));
 
-		if (prev_op == OP_LIST && error == FTPRequest::kErrEOF) {
+		op_state = OP_IDLE;
+		if (error_code == FTPRequest::kErrFailErrno)
+			r_errno = req.data()[1];
+		// translate other protocol errors to errno
+		else if (error_code == FTPRequest::kErrFail)
+			r_errno = EFAULT;
+		else if (error_code == FTPRequest::kErrInvalidDataSize)
+			r_errno = EMSGSIZE;
+		else if (error_code == FTPRequest::kErrInvalidSession)
+			r_errno = EBADFD;
+		else if (error_code == FTPRequest::kErrNoSessionsAvailable)
+			r_errno = EMFILE;
+		else if (error_code == FTPRequest::kErrUnknownCommand)
+			r_errno = ENOSYS;
+
+		if (prev_op == OP_LIST && error_code == FTPRequest::kErrEOF) {
 			/* dir list done */
 			list_directory_end();
 			return;
 		}
-		else if (prev_op == OP_READ && error == FTPRequest::kErrEOF) {
+		else if (prev_op == OP_READ && error_code == FTPRequest::kErrEOF) {
 			/* read done */
 			read_file_end();
 			return;
 		}
 
-		ROS_ERROR_NAMED("ftp", "FTP: NAck: %u State: %u", error, prev_op);
+		ROS_ERROR_NAMED("ftp", "FTP: NAK: %u Opcode: %u State: %u Errno: %d (%s)",
+				error_code, hdr->req_opcode, prev_op, r_errno, strerror(r_errno));
 		go_idle(true);
 	}
 
@@ -434,7 +416,7 @@ private:
 		if (hdr->offset != list_offset) {
 			ROS_ERROR_NAMED("ftp", "FTP: Wring list offset, req %u, ret %u",
 					list_offset, hdr->offset);
-			go_idle(true);
+			go_idle(true, EBADE);
 			return;
 		}
 
@@ -446,20 +428,24 @@ private:
 			const size_t bytes_left = hdr->size - off;
 
 			size_t slen = strnlen(ptr, bytes_left);
-			if (slen < 2) {
+			if ((ptr[0] == FTPRequest::DIRENT_SKIP && slen > 1) ||
+					(ptr[0] != FTPRequest::DIRENT_SKIP && slen < 2)) {
 				ROS_ERROR_NAMED("ftp", "FTP: Incorrect list entry: %s", ptr);
-				go_idle(true);
+				go_idle(true, ERANGE);
 				return;
 			}
 			else if (slen == bytes_left) {
 				ROS_ERROR_NAMED("ftp", "FTP: Missing NULL termination in list entry");
-				go_idle(true);
+				go_idle(true, EOVERFLOW);
 				return;
 			}
 
 			if (ptr[0] == FTPRequest::DIRENT_FILE ||
 					ptr[0] == FTPRequest::DIRENT_DIR) {
 				add_dirent(ptr, slen);
+			}
+			else if (ptr[0] == FTPRequest::DIRENT_SKIP) {
+				// do nothing
 			}
 			else {
 				ROS_WARN_NAMED("ftp", "FTP: Unknown list entry: %s", ptr);
@@ -484,20 +470,13 @@ private:
 	void handle_ack_open(FTPRequest &req) {
 		auto hdr = req.header();
 
-		ROS_DEBUG_NAMED("ftp", "FTP:m: ACK Open SZ(%u)", hdr->size);
-		ROS_ASSERT(hdr->size == 0 || hdr->size == sizeof(uint32_t));
-		if (hdr->size == sizeof(uint32_t)) {
-			// kCmdOpen ACK
-			open_size = *req.data_u32();
-		}
-		else if (hdr->size == 0) {
-			// kCmdCreate ACK
-			open_size = 0;
-		}
+		ROS_DEBUG_NAMED("ftp", "FTP:m: ACK Open OPCODE(%u)", hdr->req_opcode);
+		ROS_ASSERT(hdr->size == sizeof(uint32_t));
+		open_size = *req.data_u32();
 
-		ROS_DEBUG_NAMED("ftp", "FTP:Open %s: success, session %u, size %zu",
+		ROS_INFO_NAMED("ftp", "FTP:Open %s: success, session %u, size %zu",
 				open_path.c_str(), hdr->session, open_size);
-		session_file_map[open_path] = hdr->session;
+		session_file_map.insert(std::make_pair(open_path, hdr->session));
 		go_idle(false);
 	}
 
@@ -507,24 +486,23 @@ private:
 		ROS_DEBUG_NAMED("ftp", "FTP:m: ACK Read SZ(%u)", hdr->size);
 		if (hdr->session != active_session) {
 			ROS_ERROR_NAMED("ftp", "FTP:Read unexpected session");
-			go_idle(true);
+			go_idle(true, EBADSLT);
 			return;
 		}
 
 		if (hdr->offset != read_offset) {
 			ROS_ERROR_NAMED("ftp", "FTP:Read different offset");
-			go_idle(true);
+			go_idle(true, EBADE);
 			return;
 		}
 
-		// kCmdRead return cunks of DATA_MAXSZ or smaller (last chunk)
+		// kCmdReadFile return cunks of DATA_MAXSZ or smaller (last chunk)
 		// We requested specific amount of data, that can be smaller,
 		// but not larger.
 		const size_t bytes_left = read_size - read_buffer.size();
 		const size_t bytes_to_copy = std::min<size_t>(bytes_left, hdr->size);
 
 		read_buffer.insert(read_buffer.end(), req.data(), req.data() + bytes_to_copy);
-		//! @todo excancge speed calculation
 
 		if (bytes_to_copy == FTPRequest::DATA_MAXSZ) {
 			// Possibly more data
@@ -535,16 +513,69 @@ private:
 			read_file_end();
 	}
 
+	void handle_ack_write(FTPRequest &req) {
+		auto hdr = req.header();
+
+		ROS_DEBUG_NAMED("ftp", "FTP:m: ACK Write SZ(%u)", hdr->size);
+		if (hdr->session != active_session) {
+			ROS_ERROR_NAMED("ftp", "FTP:Write unexpected session");
+			go_idle(true, EBADSLT);
+			return;
+		}
+
+		if (hdr->offset != write_offset) {
+			ROS_ERROR_NAMED("ftp", "FTP:Write different offset");
+			go_idle(true, EBADE);
+			return;
+		}
+
+		// check that reported size not out of range
+		const size_t bytes_left_before_advance = std::distance(write_it, write_buffer.end());
+		ROS_ASSERT_MSG(hdr->size <= bytes_left_before_advance, "Bad write size");
+		ROS_ASSERT(hdr->size != 0);
+
+		// move iterator to written size
+		std::advance(write_it, hdr->size);
+
+		const size_t bytes_to_copy = write_bytes_to_copy();
+		if (bytes_to_copy > 0) {
+			// More data to write
+			write_offset += hdr->size;
+			send_write_command(bytes_to_copy);
+		}
+		else
+			write_file_end();
+	}
+
+	void handle_ack_checksum(FTPRequest &req) {
+		auto hdr = req.header();
+
+		ROS_DEBUG_NAMED("ftp", "FTP:m: ACK CalcFileCRC32 OPCODE(%u)", hdr->req_opcode);
+		ROS_ASSERT(hdr->size == sizeof(uint32_t));
+		checksum_crc32 = *req.data_u32();
+
+		ROS_DEBUG_NAMED("ftp", "FTP:Checksum: success, crc32: 0x%08x", checksum_crc32);
+		go_idle(false);
+	}
+
 	/* -*- send helpers -*- */
 
-	void go_idle(bool is_error_) {
+	/**
+	 * @brief Go to IDLE mode
+	 *
+	 * @param is_error_ mark that caused in error case
+	 * @param r_errno_ set r_errno in error case
+	 */
+	void go_idle(bool is_error_, int r_errno_ = 0) {
 		op_state = OP_IDLE;
 		is_error = is_error_;
+		if (is_error && r_errno_ != 0)	r_errno = r_errno_;
+		else if (!is_error)		r_errno = 0;
 		cond.notify_all();
 	}
 
 	void send_reset() {
-		ROS_DEBUG_NAMED("ftp", "FTP:m: kCmdReset");
+		ROS_DEBUG_NAMED("ftp", "FTP:m: kCmdResetSessions");
 		if (session_file_map.size() > 0) {
 			ROS_WARN_NAMED("ftp", "FTP: Reset closes %zu sessons",
 					session_file_map.size());
@@ -552,37 +583,38 @@ private:
 		}
 
 		op_state = OP_ACK;
-		FTPRequest req(FTPRequest::kCmdReset);
+		FTPRequest req(FTPRequest::kCmdResetSessions);
+		req.send(uas, last_send_seqnr);
+	}
+
+	/// Send any command with string payload (usually file/dir path)
+	inline void send_any_path_command(FTPRequest::Opcode op, const std::string debug_msg, std::string &path, uint32_t offset) {
+		ROS_DEBUG_STREAM_NAMED("ftp", "FTP:m: " << debug_msg << path << " off: " << offset);
+		FTPRequest req(op);
+		req.header()->offset = offset;
+		req.set_data_string(path);
 		req.send(uas, last_send_seqnr);
 	}
 
 	void send_list_command() {
-		ROS_DEBUG_STREAM_NAMED("ftp", "FTP:m: kCmdList: " << list_path << " off: " << list_offset);
-		FTPRequest req(FTPRequest::kCmdList);
-		req.header()->offset = list_offset;
-		req.set_data_string(list_path);
-		req.send(uas, last_send_seqnr);
+		send_any_path_command(FTPRequest::kCmdListDirectory, "kCmdListDirectory: ", list_path, list_offset);
 	}
 
-	void send_open_command() {
-		ROS_DEBUG_STREAM_NAMED("ftp", "FTP:m: kCmdOpen: " << open_path);
-		FTPRequest req(FTPRequest::kCmdOpen);
-		req.header()->offset = 0;
-		req.set_data_string(open_path);
-		req.send(uas, last_send_seqnr);
+	void send_open_ro_command() {
+		send_any_path_command(FTPRequest::kCmdOpenFileRO, "kCmdOpenFileRO: ", open_path, 0);
+	}
+
+	void send_open_wo_command() {
+		send_any_path_command(FTPRequest::kCmdOpenFileWO, "kCmdOpenFileWO: ", open_path, 0);
 	}
 
 	void send_create_command() {
-		ROS_DEBUG_STREAM_NAMED("ftp", "FTP:m: kCmdCreate: " << open_path);
-		FTPRequest req(FTPRequest::kCmdCreate);
-		req.header()->offset = 0;
-		req.set_data_string(open_path);
-		req.send(uas, last_send_seqnr);
+		send_any_path_command(FTPRequest::kCmdCreateFile, "kCmdCreateFile: ", open_path, 0);
 	}
 
 	void send_terminate_command(uint32_t session) {
-		ROS_DEBUG_STREAM_NAMED("ftp", "FTP:m: kCmdTerminate: " << session);
-		FTPRequest req(FTPRequest::kCmdTerminate, session);
+		ROS_DEBUG_STREAM_NAMED("ftp", "FTP:m: kCmdTerminateSession: " << session);
+		FTPRequest req(FTPRequest::kCmdTerminateSession, session);
 		req.header()->offset = 0;
 		req.header()->size = 0;
 		req.send(uas, last_send_seqnr);
@@ -590,14 +622,59 @@ private:
 
 	void send_read_command() {
 		// read operation always try read DATA_MAXSZ block (hdr->size ignored)
-		ROS_DEBUG_STREAM_NAMED("ftp", "FTP:m: kCmdRead: " << active_session << " off: " << read_offset);
-		FTPRequest req(FTPRequest::kCmdRead, active_session);
+		ROS_DEBUG_STREAM_NAMED("ftp", "FTP:m: kCmdReadFile: " << active_session << " off: " << read_offset);
+		FTPRequest req(FTPRequest::kCmdReadFile, active_session);
 		req.header()->offset = read_offset;
 		req.header()->size = 0 /* FTPRequest::DATA_MAXSZ */;
 		req.send(uas, last_send_seqnr);
 	}
 
-	/* how to open existing file to write? */
+	void send_write_command(const size_t bytes_to_copy) {
+		// write chunk from write_buffer [write_it..bytes_to_copy]
+		ROS_DEBUG_STREAM_NAMED("ftp", "FTP:m: kCmdWriteFile: " << active_session << " off: " << write_offset << " sz: " << bytes_to_copy);
+		FTPRequest req(FTPRequest::kCmdWriteFile, active_session);
+		req.header()->offset = write_offset;
+		req.header()->size = bytes_to_copy;
+		std::copy(write_it, write_it + bytes_to_copy, req.data());
+		req.send(uas, last_send_seqnr);
+	}
+
+	void send_remove_command(std::string &path) {
+		send_any_path_command(FTPRequest::kCmdRemoveFile, "kCmdRemoveFile: ", path, 0);
+	}
+
+	bool send_rename_command(std::string &old_path, std::string &new_path) {
+		std::ostringstream os;
+		os << old_path;
+		os << '\0';
+		os << new_path;
+
+		std::string paths = os.str();
+		if (paths.size() >= FTPRequest::DATA_MAXSZ) {
+			ROS_ERROR_NAMED("ftp", "FTP: rename file paths is too long: %zu", paths.size());
+			r_errno = ENAMETOOLONG;
+			return false;
+		}
+
+		send_any_path_command(FTPRequest::kCmdRename, "kCmdRename: ", paths, 0);
+		return true;
+	}
+
+	void send_truncate_command(std::string &path, size_t length) {
+		send_any_path_command(FTPRequest::kCmdTruncateFile, "kCmdTruncateFile: ", path, length);
+	}
+
+	void send_create_dir_command(std::string &path) {
+		send_any_path_command(FTPRequest::kCmdCreateDirectory, "kCmdCreateDirectory: ", path, 0);
+	}
+
+	void send_remove_dir_command(std::string &path) {
+		send_any_path_command(FTPRequest::kCmdRemoveDirectory, "kCmdRemoveDirectory: ", path, 0);
+	}
+
+	void send_calc_file_crc32_command(std::string &path) {
+		send_any_path_command(FTPRequest::kCmdCalcFileCRC32, "kCmdCalcFileCRC32: ", path, 0);
+	}
 
 	/* -*- helpers -*- */
 
@@ -628,10 +705,6 @@ private:
 			ROS_DEBUG_STREAM_NAMED("ftp", "FTP:List File: " << ent.name << " SZ: " << ent.size);
 		}
 
-		// skip adding special files
-		if (ent.name == "." || ent.name == "..")
-			return;
-
 		list_entries.push_back(ent);
 	}
 
@@ -640,7 +713,7 @@ private:
 		go_idle(false);
 	}
 
-	void list_directory(std::string path) {
+	void list_directory(std::string &path) {
 		list_offset = 0;
 		list_path = path;
 		list_entries.clear();
@@ -649,27 +722,32 @@ private:
 		send_list_command();
 	}
 
-	bool open_file(std::string path, int mode) {
+	bool open_file(std::string &path, int mode) {
 		open_path = path;
 		open_size = 0;
 		op_state = OP_OPEN;
 
 		if (mode == mavros::FileOpenRequest::MODE_READ)
-			send_open_command();
-		//else if (mode == mavros::FileOpenRequest::MODE_WRITE)
-		//	send_create_command();
+			send_open_ro_command();
+		else if (mode == mavros::FileOpenRequest::MODE_WRITE)
+			send_open_wo_command();
+		else if (mode == mavros::FileOpenRequest::MODE_CREATE)
+			send_create_command();
 		else {
+			ROS_ERROR_NAMED("ftp", "FTP: Unsupported open mode: %d", mode);
 			op_state = OP_IDLE;
+			r_errno = EINVAL;
 			return false;
 		}
 
 		return true;
 	}
 
-	bool close_file(std::string path) {
+	bool close_file(std::string &path) {
 		auto it = session_file_map.find(path);
 		if (it == session_file_map.end()) {
 			ROS_ERROR_NAMED("ftp", "FTP:Close %s: not opened", path.c_str());
+			r_errno = EBADF;
 			return false;
 		}
 
@@ -684,10 +762,11 @@ private:
 		go_idle(false);
 	}
 
-	bool read_file(std::string path, size_t off, size_t len) {
+	bool read_file(std::string &path, size_t off, size_t len) {
 		auto it = session_file_map.find(path);
 		if (it == session_file_map.end()) {
 			ROS_ERROR_NAMED("ftp", "FTP:Read %s: not opened", path.c_str());
+			r_errno = EBADF;
 			return false;
 		}
 
@@ -706,41 +785,115 @@ private:
 		return true;
 	}
 
-	static constexpr int read_compute_timeout(size_t len) {
-		return CHUNK_TIMEOUT_MS * (len + 1) / FTPRequest::DATA_MAXSZ;
+	void write_file_end() {
+		ROS_DEBUG_NAMED("ftp", "FTP:Write done");
+		go_idle(false);
+	}
+
+	bool write_file(std::string &path, size_t off, V_FileData &data) {
+		auto it = session_file_map.find(path);
+		if (it == session_file_map.end()) {
+			ROS_ERROR_NAMED("ftp", "FTP:Write %s: not opened", path.c_str());
+			r_errno = EBADF;
+			return false;
+		}
+
+		op_state = OP_WRITE;
+		active_session = it->second;
+		write_offset = off;
+		write_buffer = std::move(data);
+		write_it = write_buffer.begin();
+
+		send_write_command(write_bytes_to_copy());
+		return true;
+	}
+
+	void remove_file(std::string &path) {
+		op_state = OP_ACK;
+		send_remove_command(path);
+	}
+
+	bool rename_(std::string &old_path, std::string &new_path) {
+		op_state = OP_ACK;
+		return send_rename_command(old_path, new_path);
+	}
+
+	void truncate_file(std::string &path, size_t length) {
+		op_state = OP_ACK;
+		send_truncate_command(path, length);
+	}
+
+	void create_directory(std::string &path) {
+		op_state = OP_ACK;
+		send_create_dir_command(path);
+	}
+
+	void remove_directory(std::string &path) {
+		op_state = OP_ACK;
+		send_remove_dir_command(path);
+	}
+
+	void checksum_crc32_file(std::string &path) {
+		op_state = OP_CHECKSUM;
+		checksum_crc32 = 0;
+		send_calc_file_crc32_command(path);
+	}
+
+	static constexpr int compute_rw_timeout(size_t len) {
+		return CHUNK_TIMEOUT_MS * (len / FTPRequest::DATA_MAXSZ + 1);
+	}
+
+	size_t write_bytes_to_copy() {
+		return std::min<size_t>(std::distance(write_it, write_buffer.end()),
+				FTPRequest::DATA_MAXSZ);
 	}
 
 	bool wait_completion(const int msecs) {
 		std::unique_lock<std::mutex> lock(cond_mutex);
 
-		return cond.wait_for(lock, std::chrono::milliseconds(msecs))
-			== std::cv_status::no_timeout
-			&& !is_error;
+		bool is_timedout = cond.wait_for(lock, std::chrono::milliseconds(msecs))
+			== std::cv_status::timeout;
+
+		if (is_timedout) {
+			// If timeout occurs don't forget to reset state
+			op_state = OP_IDLE;
+			r_errno = ETIMEDOUT;
+			return false;
+		}
+		else
+			// if go_idle() occurs before timeout
+			return !is_error;
 	}
 
 	/* -*- service callbacks -*- */
 
+	/**
+	 * Service handler common header code.
+	 */
+#define SERVICE_IDLE_CHECK()				\
+	if (op_state != OP_IDLE) {			\
+		ROS_ERROR_NAMED("ftp", "FTP: Busy");	\
+		return false;				\
+	}
+
 	bool list_cb(mavros::FileList::Request &req,
 			mavros::FileList::Response &res) {
-		if (op_state != OP_IDLE) {
-			ROS_ERROR_NAMED("ftp", "FTP: Busy");
-			return false;
-		}
+		SERVICE_IDLE_CHECK();
 
 		list_directory(req.dir_path);
 		res.success = wait_completion(LIST_TIMEOUT_MS);
-		if (res.success)
-			res.list = list_entries;
+		res.r_errno = r_errno;
+		if (res.success) {
+			res.list = std::move(list_entries);
+			list_entries.clear();	// not shure that it's needed
+		}
 
 		return true;
 	}
 
 	bool open_cb(mavros::FileOpen::Request &req,
 			mavros::FileOpen::Response &res) {
-		if (op_state != OP_IDLE) {
-			ROS_ERROR_NAMED("ftp", "FTP: Busy");
-			return false;
-		}
+		SERVICE_IDLE_CHECK();
 
 		// only one session per file
 		auto it = session_file_map.find(req.file_path);
@@ -751,46 +904,131 @@ private:
 		}
 
 		res.success = open_file(req.file_path, req.mode);
-		if (res.success)
+		if (res.success) {
 			res.success = wait_completion(OPEN_TIMEOUT_MS);
-		if (res.success)
 			res.size = open_size;
-
-		//! @todo return system error code for fuse driver
-		//! @todo inactivity close timer
+		}
+		res.r_errno = r_errno;
 
 		return true;
 	}
 
 	bool close_cb(mavros::FileClose::Request &req,
 			mavros::FileClose::Response &res) {
-		if (op_state != OP_IDLE) {
-			ROS_ERROR_NAMED("ftp", "FTP: Busy");
-			return false;
-		}
+		SERVICE_IDLE_CHECK();
 
 		res.success = close_file(req.file_path);
-		if (res.success)
+		if (res.success) {
 			res.success = wait_completion(OPEN_TIMEOUT_MS);
+		}
+		res.r_errno = r_errno;
 
 		return true;
 	}
 
 	bool read_cb(mavros::FileRead::Request &req,
 			mavros::FileRead::Response &res) {
-		if (op_state != OP_IDLE) {
-			ROS_ERROR_NAMED("ftp", "FTP: Busy");
-			return false;
-		}
+		SERVICE_IDLE_CHECK();
 
 		res.success = read_file(req.file_path, req.offset, req.size);
 		if (res.success)
-			res.success = wait_completion(read_compute_timeout(req.size));
-		if (res.success)
-			res.data = read_buffer;
+			res.success = wait_completion(compute_rw_timeout(req.size));
+		if (res.success) {
+			res.data = std::move(read_buffer);
+			read_buffer.clear();	// same as for list_entries
+		}
+		res.r_errno = r_errno;
 
 		return true;
 	}
+
+	bool write_cb(mavros::FileWrite::Request &req,
+			mavros::FileWrite::Response &res) {
+		SERVICE_IDLE_CHECK();
+
+		const size_t data_size = req.data.size();
+		res.success = write_file(req.file_path, req.offset, req.data);
+		if (res.success) {
+			res.success = wait_completion(compute_rw_timeout(data_size));
+		}
+		write_buffer.clear();
+		res.r_errno = r_errno;
+
+		return true;
+	}
+
+	bool remove_cb(mavros::FileRemove::Request &req,
+			mavros::FileRemove::Response &res) {
+		SERVICE_IDLE_CHECK();
+
+		remove_file(req.file_path);
+		res.success = wait_completion(OPEN_TIMEOUT_MS);
+		res.r_errno = r_errno;
+
+		return true;
+	}
+
+	bool rename_cb(mavros::FileRename::Request &req,
+			mavros::FileRename::Response &res) {
+		SERVICE_IDLE_CHECK();
+
+		res.success = rename_(req.old_path, req.new_path);
+		if (res.success) {
+			res.success = wait_completion(OPEN_TIMEOUT_MS);
+		}
+		res.r_errno = r_errno;
+
+		return true;
+	}
+
+
+	bool truncate_cb(mavros::FileTruncate::Request &req,
+			mavros::FileTruncate::Response &res) {
+		SERVICE_IDLE_CHECK();
+
+		// Note: emulated truncate() can take a while
+		truncate_file(req.file_path, req.length);
+		res.success = wait_completion(LIST_TIMEOUT_MS * 5);
+		res.r_errno = r_errno;
+
+		return true;
+	}
+
+	bool mkdir_cb(mavros::FileMakeDir::Request &req,
+			mavros::FileMakeDir::Response &res) {
+		SERVICE_IDLE_CHECK();
+
+		create_directory(req.dir_path);
+		res.success = wait_completion(OPEN_TIMEOUT_MS);
+		res.r_errno = r_errno;
+
+		return true;
+	}
+
+	bool rmdir_cb(mavros::FileRemoveDir::Request &req,
+			mavros::FileRemoveDir::Response &res) {
+		SERVICE_IDLE_CHECK();
+
+		remove_directory(req.dir_path);
+		res.success = wait_completion(OPEN_TIMEOUT_MS);
+		res.r_errno = r_errno;
+
+		return true;
+	}
+
+	bool checksum_cb(mavros::FileChecksum::Request &req,
+			mavros::FileChecksum::Response &res) {
+		SERVICE_IDLE_CHECK();
+
+		checksum_crc32_file(req.file_path);
+		res.success = wait_completion(LIST_TIMEOUT_MS);
+		res.crc32 = checksum_crc32;
+		res.r_errno = r_errno;
+
+		return true;
+	}
+
+#undef SERVICE_IDLE_CHECK
 
 	/**
 	 * @brief Reset communication on both sides.

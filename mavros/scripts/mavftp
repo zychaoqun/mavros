@@ -19,40 +19,17 @@
 
 from __future__ import print_function
 
-import sys
 import argparse
 
 import rospy
-from std_srvs.srv import Empty
-from mavros.msg import FileEntry
-from mavros.srv import FileOpen, FileClose, FileRead, FileList, FileOpenRequest
-
-
-def print_if(cond, *args, **kvargs):
-    if cond:
-        print(*args, **kvargs)
-
-
-def fault(*args, **kvargs):
-    kvargs['file'] = sys.stdout
-    print(*args, **kvargs)
-    sys.exit(1)
-
+from mavros.utils import *
+from mavros.ftp import *
 
 
 def do_list(args):
     rospy.init_node("mavftp", anonymous=True)
 
-    try:
-        list_cl = rospy.ServiceProxy(args.mavros_ns + "/ftp/list", FileList)
-        ret = list_cl(dir_path=args.path)
-    except rospy.ServiceException as ex:
-        fault(ex)
-
-    if not ret.success:
-        fault("Request failed. Check mavros logs")
-
-    for ent in ret.list:
+    for ent in ftp_listdir(args.path, args.mavros_ns):
         n = ent.name
         if ent.type == FileEntry.TYPE_DIRECTORY:
             n += '/'
@@ -62,72 +39,51 @@ def do_list(args):
         print(n)
 
 
-def open_file(args, path, mode):
-    if mode == 'w':
-        m = FileOpenRequest.MODE_WRITE
-    else:
-        m = FileOpenRequest.MODE_READ
-
-    try:
-        open_cl = rospy.ServiceProxy(args.mavros_ns + "/ftp/open", FileOpen)
-        ret = open_cl(file_path=path, mode=m)
-    except rospy.ServiceException as ex:
-        fault(ex)
-
-    return (ret.success, ret.size)
-
-
-
-def close_file(args, path):
-    try:
-        close_cl = rospy.ServiceProxy(args.mavros_ns + "/ftp/close", FileClose)
-        ret = close_cl(file_path=path)
-    except rospy.ServiceException as ex:
-        fault(ex)
-
-    return ret.success
-
-
-
-def read_file(args, path, offset, size):
-    try:
-        read_cl = rospy.ServiceProxy(args.mavros_ns + "/ftp/read", FileRead)
-        ret = read_cl(file_path=path, offset=offset, size=size)
-    except rospy.ServiceException as ex:
-        fault(ex)
-
-    return (ret.success, bytearray(ret.data))
-
-
-
 def do_cat(args):
     rospy.init_node("mavftp", anonymous=True)
 
-    st, size = open_file(args, args.path, 'r')
-    if not st:
-        fault("Can't open file. Check logs.")
+    with FTPFile(args.path, 'r', args.mavros_ns) as fd:
+        data = fd.read(fd.size)
+        sys.stdout.write(data)
 
-    try:
-        st, data = read_file(args, args.path, 0, size)
-        if not st:
-            fault("Failed to read data")
-    finally:
-        close_file(args, args.path)
 
-    if st:
-        print(str(data))
+def do_remove(args):
+    rospy.init_node("mavftp", anonymous=True)
 
+    ftp_unlink(args.path, args.mavros_ns)
 
 
 def do_reset(args):
     rospy.init_node("mavftp", anonymous=True)
 
-    try:
-        reset_cl = rospy.ServiceProxy(args.mavros_ns + "/ftp/reset", Empty)
-        ret = reset_cl()
-    except rospy.ServiceException as ex:
-        fault(ex)
+    ftp_reset_server(args.mavros_ns)
 
+
+def do_mkdir(args):
+    rospy.init_node("mavftp", anonymous=True)
+
+    ftp_mkdir(args.path, args.mavros_ns)
+
+
+def do_rmdir(args):
+    rospy.init_node("mavftp", anonymous=True)
+
+    ftp_rmdir(args.path, args.mavros_ns)
+
+
+def do_upload(args):
+    rospy.init_node("mavftp", anonymous=True)
+
+    mode = 'cw' if args.no_overwrite else 'w'
+
+    with args.file as from_fd:
+        with FTPFile(args.path, mode) as to_fd:
+            while True:
+                buf = from_fd.read(1024)
+                if len(buf) == 0:
+                    break;
+
+                to_fd.write(buf)
 
 
 def main():
@@ -144,6 +100,25 @@ def main():
     cat_args.set_defaults(func=do_cat)
     cat_args.add_argument('path', type=str, help="file path")
 
+    remove_args = subarg.add_parser('remove', help="remove file")
+    remove_args.set_defaults(func=do_remove)
+    remove_args.add_argument('path', type=str, help="file path")
+
+    mkdir_args = subarg.add_parser('mkdir', help="create direcotory")
+    mkdir_args.set_defaults(func=do_mkdir)
+    # mkdir_args.add_argument('-p', action='store_true', help="dir path")
+    mkdir_args.add_argument('path', type=str, help="dir path")
+
+    rmdir_args = subarg.add_parser('rmdir', help="remove directory")
+    rmdir_args.set_defaults(func=do_rmdir)
+    rmdir_args.add_argument('path', type=str, help="dir path")
+
+    upload_args = subarg.add_parser('upload', help="upload file")
+    upload_args.set_defaults(func=do_upload)
+    upload_args.add_argument('file', type=argparse.FileType('rb'), help="file to send")
+    upload_args.add_argument('path', type=str, help="save path")
+    upload_args.add_argument('-n', '--no-overwrite', action="store_true", help="do not overwrite existing file")
+
     reset_args = subarg.add_parser('reset', help="reset")
     reset_args.set_defaults(func=do_reset)
 
@@ -153,4 +128,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
