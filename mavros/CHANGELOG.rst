@@ -2,6 +2,89 @@
 Changelog for package mavros
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+0.9.4 (2015-01-06)
+------------------
+* plugin: sys_time: enable EMA
+* Contributors: M.H.Kabir
+
+0.9.3 (2014-12-30)
+------------------
+* plugin: visualization finshed
+* Restore EMA. Works better for low rates.
+* Update sys_time.cpp
+* plugin : add time offset field to dt_diag
+* Final fixes
+* minor
+* plugin : fixes timesync. FCU support checked.
+* Visualisation system import
+* param: Fix float copying too
+* param: Fix missing
+* param: Trynig to fix 'crosses initialization of XXX' error.
+* param: Try to fix `#170 <https://github.com/vooon/mavros/issues/170>`_.
+* Update units
+* New message, moving average compensation
+* Initial import new sync interface
+* plugin: sys_status: Enable TERRAIN health decoding.
+* Contributors: Kabir Mohammed, M.H.Kabir, Mohammed Kabir, Vladimir Ermakov
+
+0.9.2 (2014-11-04)
+------------------
+
+0.9.1 (2014-11-03)
+------------------
+* Update installation notes for `#162 <https://github.com/vooon/mavros/issues/162>`_
+* Contributors: Vladimir Ermakov
+
+0.9.0 (2014-11-03)
+------------------
+
+0.8.2 (2014-11-03)
+------------------
+* REP140: update package.xml format.
+  Hydro don't accept this format correctly,
+  but after split i can update.
+* Contributors: Vladimir Ermakov
+
+0.8.1 (2014-11-02)
+------------------
+* fix build deps for gcs_bridge
+* mavconn `#161 <https://github.com/vooon/mavros/issues/161>`_: Enable rosconsole bridge.
+* mavconn `#161 <https://github.com/vooon/mavros/issues/161>`_: Move mavconn tests.
+* mavconn `#161 <https://github.com/vooon/mavros/issues/161>`_: Fix headers used in mavros. Add readme.
+* mavconn `#161 <https://github.com/vooon/mavros/issues/161>`_: Fix mavros build.
+* mavconn `#161 <https://github.com/vooon/mavros/issues/161>`_: Move library to its own package
+  Also rosconsole replaced by console_bridge, so now library can be used
+  without ros infrastructure.
+* plugin: sys_time: Set right suffixes to uint64_t constants.
+  Issue `#156 <https://github.com/vooon/mavros/issues/156>`_.
+* plugin: sys_time: Add time syncronization diag.
+  Issue `#156 <https://github.com/vooon/mavros/issues/156>`_.
+* plugin: sys_time: Debug result.
+  Issue `#156 <https://github.com/vooon/mavros/issues/156>`_.
+* plugin: Store time offset in UAS.
+  TODO: implement fcu_time().
+  Issue `#156 <https://github.com/vooon/mavros/issues/156>`_.
+* plugin: sys_time: Fix code style.
+  Also reduce class variables count (most not used outside the method).
+  Issue `#156 <https://github.com/vooon/mavros/issues/156>`_.
+* Update repo links.
+  Package moved to mavlink organization.
+* Nanosecond fix
+* Fix
+* Fixes
+* Update sys_time.cpp
+* Update sys_time.cpp
+* Update sys_time.cpp
+* Update sys_time.cpp
+* Update CMakeLists.txt
+* Update mavros_plugins.xml
+* Update sys_time.cpp
+* Fix build
+* sys_time import. Removed all time related stuff from gps and sys_status
+* Initial sys_time plugin import
+* plugin: ftp: Bytes written now transfered in payload.
+* Contributors: Mohammed Kabir, Vladimir Ermakov
+
 0.8.0 (2014-09-22)
 ------------------
 * plugin: ftp: Disable debugging and change level for some log messages.

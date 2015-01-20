@@ -2,6 +2,41 @@
 Changelog for package mavros_extras
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+0.9.4 (2015-01-06)
+------------------
+
+0.9.3 (2014-12-30)
+------------------
+* Initiliser fix
+* plugin: visualisation - Fixes CI build
+* plugin: visualisation
+* plugin: visualization minor patch
+* plugin: visualization finshed
+* Contributors: M.H.Kabir
+
+0.9.2 (2014-11-04)
+------------------
+
+0.9.1 (2014-11-03)
+------------------
+
+0.9.0 (2014-11-03)
+------------------
+
+0.8.2 (2014-11-03)
+------------------
+* REP140: update package.xml format.
+  Hydro don't accept this format correctly,
+  but after split i can update.
+* Contributors: Vladimir Ermakov
+
+0.8.1 (2014-11-02)
+------------------
+* mavconn `#161 <https://github.com/vooon/mavros/issues/161>`_: Fix headers used in mavros. Add readme.
+* Update repo links.
+  Package moved to mavlink organization.
+* Contributors: Vladimir Ermakov
+
 0.8.0 (2014-09-22)
 ------------------
 * Revert "Update package.xml format to REP140 (2)."
