@@ -191,6 +191,7 @@ void MAVConnTCPClient::async_receive_end(error_code error, size_t bytes_transfer
 		return;
 	}
 
+	iostat_rx_add(bytes_transferred);
 	for (ssize_t i = 0; i < bytes_transferred; i++) {
 		if (mavlink_parse_char(channel, rx_buf[i], &message, &status)) {
 			logDebug("tcp%d:recv: Message-Id: %d [%d bytes] Sys-Id: %d Comp-Id: %d",
@@ -230,6 +231,7 @@ void MAVConnTCPClient::async_send_end(error_code error, size_t bytes_transferred
 		return;
 	}
 
+	iostat_tx_add(bytes_transferred);
 	lock_guard lock(mutex);
 	if (tx_q.empty()) {
 		tx_in_progress = false;
@@ -301,6 +303,53 @@ void MAVConnTCPServer::close() {
 		io_thread.join();
 
 	/* emit */ port_closed();
+}
+
+mavlink_status_t MAVConnTCPServer::get_status()
+{
+	mavlink_status_t status{};
+
+	lock_guard lock(mutex);
+	std::for_each(client_list.begin(), client_list.end(),
+			[&](boost::shared_ptr<MAVConnTCPClient> instp) {
+		auto inst_status = instp->get_status();
+
+#define ADD_STATUS(_field)	\
+		status._field += inst_status._field
+
+		ADD_STATUS(packet_rx_success_count);
+		ADD_STATUS(packet_rx_drop_count);
+		ADD_STATUS(buffer_overrun);
+		ADD_STATUS(parse_error);
+		/* seq counters always 0 for this connection type */
+
+#undef ADD_STATUS
+	});
+
+	return status;
+}
+
+MAVConnInterface::IOStat MAVConnTCPServer::get_iostat()
+{
+	MAVConnInterface::IOStat iostat{};
+
+	lock_guard lock(mutex);
+	std::for_each(client_list.begin(), client_list.end(),
+			[&](boost::shared_ptr<MAVConnTCPClient> instp) {
+		auto inst_iostat = instp->get_iostat();
+
+#define ADD_IOSTAT(_field)	\
+		iostat._field += inst_iostat._field
+
+		ADD_IOSTAT(tx_total_bytes);
+		ADD_IOSTAT(rx_total_bytes);
+		ADD_IOSTAT(tx_speed);
+		ADD_IOSTAT(rx_speed);
+
+#undef ADD_IOSTAT
+	});
+
+	return iostat;
 }
 
 void MAVConnTCPServer::send_bytes(const uint8_t *bytes, size_t length)
