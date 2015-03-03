@@ -42,20 +42,20 @@ UAS::UAS() :
 	gps_altitude(0),
 	gps_eph(0),
 	gps_epv(0),
-	fix_status(0)
-{
-}
+	fix_status(0),
+	fcu_caps_known(false),
+	fcu_capabilities(0)
+{}
 
 void UAS::stop(void)
-{
-}
+{}
 
 /* -*- time syncronise functions -*- */
 
 static inline ros::Time ros_time_from_ns(uint64_t &stamp_ns) {
 	return ros::Time(
-			stamp_ns / 1000000000UL,	// t_sec
-			stamp_ns % 1000000000UL);	// t_nsec
+		stamp_ns / 1000000000UL,		// t_sec
+		stamp_ns % 1000000000UL);		// t_nsec
 }
 
 ros::Time UAS::synchronise_stamp(uint32_t time_boot_ms) {
@@ -79,6 +79,29 @@ ros::Time UAS::synchronise_stamp(uint64_t time_usec) {
 	}
 	else
 		return ros::Time::now();
+}
+
+static uint64_t get_default_caps(uint8_t ap_type)
+{
+	// TODO: return default caps mask for known FCU's
+	return 0;
+}
+
+uint64_t UAS::get_capabilities()
+{
+	if (fcu_caps_known) {
+		uint64_t caps = fcu_capabilities;
+		return caps;
+	}
+	else {
+		return get_default_caps(get_autopilot());
+	}
+}
+
+void UAS::update_capabilities(bool known, uint64_t caps)
+{
+	fcu_caps_known = known;
+	fcu_capabilities = caps;
 }
 
 /* -*- mode stringify functions -*- */
@@ -196,10 +219,10 @@ static inline std::string str_mode_px4(uint32_t custom_mode_int) {
 
 static inline bool is_apm_copter(enum MAV_TYPE &type) {
 	return type == MAV_TYPE_QUADROTOR ||
-		type == MAV_TYPE_HEXAROTOR ||
-		type == MAV_TYPE_OCTOROTOR ||
-		type == MAV_TYPE_TRICOPTER ||
-		type == MAV_TYPE_COAXIAL;
+	       type == MAV_TYPE_HEXAROTOR ||
+	       type == MAV_TYPE_OCTOROTOR ||
+	       type == MAV_TYPE_TRICOPTER ||
+	       type == MAV_TYPE_COAXIAL;
 }
 
 std::string UAS::str_mode_v10(uint8_t base_mode, uint32_t custom_mode) {

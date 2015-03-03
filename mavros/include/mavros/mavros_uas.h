@@ -32,7 +32,6 @@
 #include <mavconn/interface.h>
 
 namespace mavros {
-
 /**
  * @brief helper accessor to FCU link interface
  */
@@ -45,8 +44,8 @@ namespace mavros {
  * Filler for first arguments of *_pack_chan functions.
  */
 #define UAS_PACK_CHAN(uasobjptr)			\
-	UAS_FCU(uasobjptr)->get_system_id(), 		\
-	UAS_FCU(uasobjptr)->get_component_id(), 	\
+	UAS_FCU(uasobjptr)->get_system_id(),		\
+	UAS_FCU(uasobjptr)->get_component_id(),		\
 	UAS_FCU(uasobjptr)->get_channel()
 
 /**
@@ -55,7 +54,7 @@ namespace mavros {
  * Filler for target_system, target_component fields.
  */
 #define UAS_PACK_TGT(uasobjptr)				\
-	(uasobjptr)->get_tgt_system(), 			\
+	(uasobjptr)->get_tgt_system(),			\
 	(uasobjptr)->get_tgt_component()
 
 /**
@@ -147,14 +146,14 @@ public:
 	 * @brief Return communication target system
 	 */
 	inline uint8_t get_tgt_system() {
-		return target_system; // not changed after configuration
+		return target_system;	// not changed after configuration
 	}
 
 	/**
 	 * @brief Return communication target component
 	 */
 	inline uint8_t get_tgt_component() {
-		return target_component; // not changed after configuration
+		return target_component;// not changed after configuration
 	}
 
 	inline void set_tgt(uint8_t sys, uint8_t comp) {
@@ -281,6 +280,10 @@ public:
 		return time_offset;
 	}
 
+	/* -*- autopilot version -*- */
+	uint64_t get_capabilities();
+	void update_capabilities(bool known, uint64_t caps = 0);
+
 	/* -*- utils -*- */
 
 	/**
@@ -350,6 +353,7 @@ private:
 	double gps_epv;
 	std::atomic<bool> fix_status;
 	std::atomic<uint64_t> time_offset;
+	std::atomic<bool> fcu_caps_known;
+	std::atomic<uint64_t> fcu_capabilities;
 };
-
-}; // namespace mavros
+};	// namespace mavros

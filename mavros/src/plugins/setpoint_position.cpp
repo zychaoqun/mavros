@@ -31,7 +31,6 @@
 #include <geometry_msgs/PoseStamped.h>
 
 namespace mavplugin {
-
 /**
  * @brief Setpoint position plugin
  *
@@ -106,7 +105,7 @@ private:
 		/* Documentation start from bit 1 instead 0,
 		 * Ignore velocity and accel vectors, yaw rate
 		 */
-		uint16_t ignore_all_except_xyzy = (1<<11)|(7<<6)|(7<<3);
+		uint16_t ignore_all_except_xyzy = (1 << 11) | (7 << 6) | (7 << 3);
 
 		// ENU->NED. Issue #49.
 		set_position_target_local_ned(stamp.toNSec() / 1000000,
@@ -128,7 +127,6 @@ private:
 		send_setpoint_transform(transform, req->header.stamp);
 	}
 };
-
-}; // namespace mavplugin
+};	// namespace mavplugin
 
 PLUGINLIB_EXPORT_CLASS(mavplugin::SetpointPositionPlugin, mavplugin::MavRosPlugin)
