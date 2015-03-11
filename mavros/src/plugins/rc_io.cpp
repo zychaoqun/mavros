@@ -7,21 +7,11 @@
  * @{
  */
 /*
- * Copyright 2014 Vladimir Ermakov.
+ * Copyright 2014,2015 Vladimir Ermakov.
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 3 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful, but
- * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
- * or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License
- * for more details.
- *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
+ * This file is part of the mavros package and subject to the license terms
+ * in the top-level LICENSE file of the mavros repository.
+ * https://github.com/mavlink/mavros/tree/master/LICENSE.md
  */
 
 #include <mavros/mavros_plugin.h>
@@ -38,28 +28,22 @@ namespace mavplugin {
 class RCIOPlugin : public MavRosPlugin {
 public:
 	RCIOPlugin() :
+		rc_nh("~rc"),
 		uas(nullptr),
 		raw_rc_in(0),
 		raw_rc_out(0),
 		has_rc_channels_msg(false)
 	{ };
 
-	void initialize(UAS &uas_,
-			ros::NodeHandle &nh,
-			diagnostic_updater::Updater &diag_updater)
+	void initialize(UAS &uas_)
 	{
 		uas = &uas_;
 
-		rc_nh = ros::NodeHandle(nh, "rc");
 		rc_in_pub = rc_nh.advertise<mavros::RCIn>("in", 10);
 		rc_out_pub = rc_nh.advertise<mavros::RCOut>("out", 10);
 		override_sub = rc_nh.subscribe("override", 10, &RCIOPlugin::override_cb, this);
 
 		uas->sig_connection_changed.connect(boost::bind(&RCIOPlugin::connection_cb, this, _1));
-	};
-
-	std::string const get_name() const {
-		return "RCIO";
 	};
 
 	const message_map get_rx_handlers() {
@@ -72,13 +56,13 @@ public:
 
 private:
 	std::recursive_mutex mutex;
+	ros::NodeHandle rc_nh;
 	UAS *uas;
 
 	std::vector<uint16_t> raw_rc_in;
 	std::vector<uint16_t> raw_rc_out;
 	bool has_rc_channels_msg;
 
-	ros::NodeHandle rc_nh;
 	ros::Publisher rc_in_pub;
 	ros::Publisher rc_out_pub;
 	ros::Subscriber override_sub;
@@ -110,7 +94,7 @@ private:
 		SET_RC_IN(8);
 #undef SET_RC_IN
 
-		mavros::RCInPtr rcin_msg = boost::make_shared<mavros::RCIn>();
+		auto rcin_msg = boost::make_shared<mavros::RCIn>();
 
 		rcin_msg->header.stamp = uas->synchronise_stamp(port.time_boot_ms);
 		rcin_msg->rssi = port.rssi;
@@ -159,7 +143,7 @@ private:
 		IFSET_RC_IN(18);
 #undef IFSET_RC_IN
 
-		mavros::RCInPtr rcin_msg = boost::make_shared<mavros::RCIn>();
+		auto rcin_msg = boost::make_shared<mavros::RCIn>();
 
 		rcin_msg->header.stamp = uas->synchronise_stamp(channels.time_boot_ms);
 		rcin_msg->rssi = channels.rssi;
@@ -189,7 +173,7 @@ private:
 		SET_RC_OUT(8);
 #undef SET_RC_OUT
 
-		mavros::RCOutPtr rcout_msg = boost::make_shared<mavros::RCOut>();
+		auto rcout_msg = boost::make_shared<mavros::RCOut>();
 
 		// XXX: Why time_usec id 32 bit? We should test that.
 		uint64_t time_usec = port.time_usec;

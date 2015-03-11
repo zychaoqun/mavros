@@ -7,21 +7,11 @@
  * @{
  */
 /*
- * Copyright 2013 Vladimir Ermakov.
+ * Copyright 2013,2014,2015 Vladimir Ermakov.
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 3 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful, but
- * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
- * or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License
- * for more details.
- *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
+ * This file is part of the mavros package and subject to the license terms
+ * in the top-level LICENSE file of the mavros repository.
+ * https://github.com/mavlink/mavros/tree/master/LICENSE.md
  */
 
 #include <mavros/mavros_plugin.h>
@@ -50,7 +40,9 @@ public:
 		tolerance_(0.1),
 		times_(win_size),
 		seq_nums_(win_size),
-		last_hb {}
+		autopilot(MAV_AUTOPILOT_GENERIC),
+		type(MAV_TYPE_GENERIC),
+		system_status(MAV_STATE_UNINIT)
 	{
 		clear();
 	}
@@ -69,10 +61,15 @@ public:
 		hist_indx_ = 0;
 	}
 
-	void tick(mavlink_heartbeat_t &hb_struct) {
+	void tick(uint8_t type_, uint8_t autopilot_,
+			std::string &mode_, uint8_t system_status_) {
 		lock_guard lock(mutex);
 		count_++;
-		last_hb = hb_struct;
+
+		type = static_cast<enum MAV_TYPE>(type_);
+		autopilot = static_cast<enum MAV_AUTOPILOT>(autopilot_);
+		mode = mode_;
+		system_status = static_cast<enum MAV_STATE>(system_status_);
 	}
 
 	void run(diagnostic_updater::DiagnosticStatusWrapper &stat) {
@@ -99,15 +96,12 @@ public:
 			stat.summary(0, "Normal");
 		}
 
-		stat.addf("Events in window", "%d", events);
-		stat.addf("Events since startup", "%d", count_);
-		stat.addf("Duration of window (s)", "%f", window);
-		stat.addf("Actual frequency (Hz)", "%f", freq);
-		stat.addf("MAV Type", "%u", last_hb.type);
-		stat.addf("Autopilot type", "%u", last_hb.autopilot);
-		stat.addf("Autopilot base mode", "0x%02X", last_hb.base_mode);
-		stat.addf("Autopilot custom mode", "0x%08X", last_hb.custom_mode);
-		stat.addf("Autopilot system status", "%u", last_hb.system_status);
+		stat.addf("Heartbeats since startup", "%d", count_);
+		stat.addf("Frequency (Hz)", "%f", freq);
+		stat.add("Vehicle type", mavros::UAS::str_type(type));
+		stat.add("Autopilot type", mavros::UAS::str_autopilot(autopilot));
+		stat.add("Mode", mode);
+		stat.add("System status", mavros::UAS::str_system_status(system_status));
 	}
 
 private:
@@ -120,10 +114,17 @@ private:
 	const double min_freq_;
 	const double max_freq_;
 	const double tolerance_;
-	mavlink_heartbeat_t last_hb;
+
+	enum MAV_AUTOPILOT autopilot;
+	enum MAV_TYPE type;
+	std::string mode;
+	enum MAV_STATE system_status;
 };
 
 
+/**
+ * @brief System status diagnostic updater
+ */
 class SystemStatusDiag : public diagnostic_updater::DiagnosticTask
 {
 public:
@@ -196,6 +197,9 @@ private:
 };
 
 
+/**
+ * @brief Battery diagnostic updater
+ */
 class BatteryStatusDiag : public diagnostic_updater::DiagnosticTask
 {
 public:
@@ -243,6 +247,9 @@ private:
 };
 
 
+/**
+ * @brief Memory usage diag (APM-only)
+ */
 class MemInfo : public diagnostic_updater::DiagnosticTask
 {
 public:
@@ -253,13 +260,13 @@ public:
 	{};
 
 	void set(uint16_t f, uint16_t b) {
-		lock_guard lock(mutex);
 		freemem = f;
 		brkval = b;
 	}
 
 	void run(diagnostic_updater::DiagnosticStatusWrapper &stat) {
-		lock_guard lock(mutex);
+		ssize_t freemem_ = freemem;
+		uint16_t brkval_ = brkval;
 
 		if (freemem < 0)
 			stat.summary(2, "No data");
@@ -268,17 +275,19 @@ public:
 		else
 			stat.summary(0, "Normal");
 
-		stat.addf("Free memory (B)", "%zd", freemem);
-		stat.addf("Heap top", "0x%04X", brkval);
+		stat.addf("Free memory (B)", "%zd", freemem_);
+		stat.addf("Heap top", "0x%04X", brkval_);
 	}
 
 private:
-	std::recursive_mutex mutex;
-	ssize_t freemem;
-	uint16_t brkval;
+	std::atomic<ssize_t> freemem;
+	std::atomic<uint16_t> brkval;
 };
 
 
+/**
+ * @brief Hardware status (APM-only)
+ */
 class HwStatus : public diagnostic_updater::DiagnosticTask
 {
 public:
@@ -323,49 +332,42 @@ private:
 
 /**
  * @brief System status plugin.
- * Required for most applications.
+ *
+ * Required by all plugins.
  */
 class SystemStatusPlugin : public MavRosPlugin
 {
 public:
 	SystemStatusPlugin() :
+		nh("~"),
 		uas(nullptr),
 		hb_diag("Heartbeat", 10),
 		mem_diag("APM Memory"),
 		hwst_diag("APM Hardware"),
 		sys_diag("System"),
 		batt_diag("Battery"),
-		version_retries(RETRIES_COUNT)
+		version_retries(RETRIES_COUNT),
+		disable_diag(false)
 	{};
 
-	void initialize(UAS &uas_,
-			ros::NodeHandle &nh,
-			diagnostic_updater::Updater &diag_updater)
+	void initialize(UAS &uas_)
 	{
 		uas = &uas_;
-		g_nh = &nh;
 
 		double conn_timeout_d;
 		double conn_heartbeat_d;
 		double min_voltage;
-		bool disable_diag;
 
-		nh.param("conn_timeout", conn_timeout_d, 30.0);
-		nh.param("conn_heartbeat", conn_heartbeat_d, 0.0);
+		nh.param("conn/timeout", conn_timeout_d, 30.0);
+		nh.param("conn/heartbeat", conn_heartbeat_d, 0.0);
 		nh.param("sys/min_voltage", min_voltage, 6.0);
 		nh.param("sys/disable_diag", disable_diag, false);
 
 		// heartbeat diag always enabled
-		diag_updater.add(hb_diag);
+		UAS_DIAG(uas).add(hb_diag);
 		if (!disable_diag) {
-			diag_updater.add(sys_diag);
-			diag_updater.add(batt_diag);
-#ifdef MAVLINK_MSG_ID_MEMINFO
-			diag_updater.add(mem_diag);
-#endif
-#ifdef MAVLINK_MSG_ID_HWSTATUS
-			diag_updater.add(hwst_diag);
-#endif
+			UAS_DIAG(uas).add(sys_diag);
+			UAS_DIAG(uas).add(batt_diag);
 
 			batt_diag.set_min_voltage(min_voltage);
 		}
@@ -396,10 +398,6 @@ public:
 		mode_srv = nh.advertiseService("set_mode", &SystemStatusPlugin::set_mode_cb, this);
 	}
 
-	const std::string get_name() const {
-		return "SystemStatus";
-	}
-
 	const message_map get_rx_handlers() {
 		return {
 			       MESSAGE_HANDLER(MAVLINK_MSG_ID_HEARTBEAT, &SystemStatusPlugin::handle_heartbeat),
@@ -416,8 +414,8 @@ public:
 	}
 
 private:
+	ros::NodeHandle nh;
 	UAS *uas;
-	ros::NodeHandle *g_nh;
 
 	HeartbeatStatus hb_diag;
 	MemInfo mem_diag;
@@ -435,6 +433,7 @@ private:
 
 	static constexpr int RETRIES_COUNT = 3;
 	int version_retries;
+	bool disable_diag;
 
 	/* -*- mid-level helpers -*- */
 
@@ -501,7 +500,13 @@ private:
 	void handle_heartbeat(const mavlink_message_t *msg, uint8_t sysid, uint8_t compid) {
 		mavlink_heartbeat_t hb;
 		mavlink_msg_heartbeat_decode(msg, &hb);
-		hb_diag.tick(hb);
+
+		auto state_msg = boost::make_shared<mavros::State>();
+
+		state_msg->header.stamp = ros::Time::now();
+		state_msg->armed = hb.base_mode & MAV_MODE_FLAG_SAFETY_ARMED;
+		state_msg->guided = hb.base_mode & MAV_MODE_FLAG_GUIDED_ENABLED;
+		state_msg->mode = uas->str_mode_v10(hb.base_mode, hb.custom_mode);
 
 		// update context && setup connection timeout
 		uas->update_heartbeat(hb.type, hb.autopilot);
@@ -509,11 +514,7 @@ private:
 		timeout_timer.stop();
 		timeout_timer.start();
 
-		mavros::StatePtr state_msg = boost::make_shared<mavros::State>();
-		state_msg->header.stamp = ros::Time::now();
-		state_msg->armed = hb.base_mode & MAV_MODE_FLAG_SAFETY_ARMED;
-		state_msg->guided = hb.base_mode & MAV_MODE_FLAG_GUIDED_ENABLED;
-		state_msg->mode = uas->str_mode_v10(hb.base_mode, hb.custom_mode);
+		hb_diag.tick(hb.type, hb.autopilot, state_msg->mode, hb.system_status);
 
 		state_pub.publish(state_msg);
 	}
@@ -522,9 +523,9 @@ private:
 		mavlink_sys_status_t stat;
 		mavlink_msg_sys_status_decode(msg, &stat);
 
-		float volt = stat.voltage_battery / 1000.0;	// mV
-		float curr = stat.current_battery / 100.0;	// 10 mA or -1
-		float rem = stat.battery_remaining / 100.0;	// or -1
+		float volt = stat.voltage_battery / 1000.0f;	// mV
+		float curr = stat.current_battery / 100.0f;	// 10 mA or -1
+		float rem = stat.battery_remaining / 100.0f;	// or -1
 
 		mavros::BatteryStatusPtr batt_msg = boost::make_shared<mavros::BatteryStatus>();
 		batt_msg->header.stamp = ros::Time::now();
@@ -613,7 +614,7 @@ private:
 		bool ret = false;
 
 		try {
-			auto client = g_nh->serviceClient<mavros::CommandLong>("cmd/command");
+			auto client = nh.serviceClient<mavros::CommandLong>("cmd/command");
 
 			mavros::CommandLong cmd{};
 			cmd.request.command = MAV_CMD_REQUEST_AUTOPILOT_CAPABILITIES;
@@ -649,6 +650,27 @@ private:
 			autopilot_version_timer.start();
 		else
 			autopilot_version_timer.stop();
+
+		// add/remove APM diag tasks
+		if (connected && disable_diag && uas->is_ardupilotmega()) {
+#ifdef MAVLINK_MSG_ID_MEMINFO
+			UAS_DIAG(uas).add(mem_diag);
+#endif
+#ifdef MAVLINK_MSG_ID_HWSTATUS
+			UAS_DIAG(uas).add(hwst_diag);
+#endif
+#if !defined(MAVLINK_MSG_ID_MEMINFO) || !defined(MAVLINK_MSG_ID_HWSTATUS)
+			ROS_INFO_NAMED("sys", "SYS: APM detected, but mavros uses different dialect. "
+					"Extra diagnostic disabled.");
+#else
+			ROS_DEBUG_NAMED("sys", "SYS: APM extra diagnostics enabled.");
+#endif
+		}
+		else {
+			UAS_DIAG(uas).removeByName(mem_diag.getName());
+			UAS_DIAG(uas).removeByName(hwst_diag.getName());
+			ROS_DEBUG_NAMED("sys", "SYS: APM extra diagnostics disabled.");
+		}
 	}
 
 	/* -*- ros callbacks -*- */

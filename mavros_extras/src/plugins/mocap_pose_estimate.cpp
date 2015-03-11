@@ -10,19 +10,9 @@
 /*
  * Copyright 2014,2015 Vladimir Ermakov, Tony Baltovski.
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 3 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful, but
- * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
- * or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License
- * for more details.
- *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
+ * This file is part of the mavros package and subject to the license terms
+ * in the top-level LICENSE file of the mavros repository.
+ * https://github.com/mavlink/mavros/tree/master/LICENSE.md
  */
 
 #include <mavros/mavros_plugin.h>
@@ -42,18 +32,16 @@ class MocapPoseEstimatePlugin : public MavRosPlugin
 {
 public:
 	MocapPoseEstimatePlugin() :
+		mp_nh("~mocap"),
 		uas(nullptr)
 	{ };
 
-	void initialize(UAS &uas_,
-			ros::NodeHandle &nh,
-			diagnostic_updater::Updater &diag_updater)
+	void initialize(UAS &uas_)
 	{
 		bool use_tf;
 		bool use_pose;
 
 		uas = &uas_;
-		mp_nh = ros::NodeHandle(nh, "mocap");
 
 		mp_nh.param("use_tf", use_tf, false);		// Vicon
 		mp_nh.param("use_pose", use_pose, true);	// Optitrack
@@ -70,18 +58,14 @@ public:
 		}
 	}
 
-	const std::string get_name() const {
-		return "MocapPoseEstimate";
-	}
-
 	const message_map get_rx_handlers() {
 		return { /* Rx disabled */ };
 	}
 
 private:
+	ros::NodeHandle mp_nh;
 	UAS *uas;
 
-	ros::NodeHandle mp_nh;
 	ros::Subscriber mocap_pose_sub;
 	ros::Subscriber mocap_tf_sub;
 

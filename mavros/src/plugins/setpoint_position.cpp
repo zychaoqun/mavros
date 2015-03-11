@@ -9,19 +9,9 @@
 /*
  * Copyright 2014 Vladimir Ermakov.
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 3 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful, but
- * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
- * or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License
- * for more details.
- *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
+ * This file is part of the mavros package and subject to the license terms
+ * in the top-level LICENSE file of the mavros repository.
+ * https://github.com/mavlink/mavros/tree/master/LICENSE.md
  */
 
 #include <mavros/mavros_plugin.h>
@@ -41,23 +31,21 @@ class SetpointPositionPlugin : public MavRosPlugin,
 	private TFListenerMixin<SetpointPositionPlugin> {
 public:
 	SetpointPositionPlugin() :
+		sp_nh("~setpoint_position"),
 		uas(nullptr),
 		tf_rate(10.0)
 	{ };
 
-	void initialize(UAS &uas_,
-			ros::NodeHandle &nh,
-			diagnostic_updater::Updater &diag_updater)
+	void initialize(UAS &uas_)
 	{
 		bool listen_tf;
 
 		uas = &uas_;
-		sp_nh = ros::NodeHandle(nh, "setpoint");
 
-		sp_nh.param("position/listen_tf", listen_tf, false);
-		sp_nh.param<std::string>("position/frame_id", frame_id, "local_origin");
-		sp_nh.param<std::string>("position/child_frame_id", child_frame_id, "setpoint");
-		sp_nh.param("position/tf_rate_limit", tf_rate, 50.0);
+		sp_nh.param("listen_tf", listen_tf, false);
+		sp_nh.param<std::string>("frame_id", frame_id, "local_origin");
+		sp_nh.param<std::string>("child_frame_id", child_frame_id, "setpoint");
+		sp_nh.param("tf_rate_limit", tf_rate, 50.0);
 
 		if (listen_tf) {
 			ROS_INFO_STREAM_NAMED("setpoint", "Listen to position setpoint transform " << frame_id
@@ -69,10 +57,6 @@ public:
 		}
 	}
 
-	const std::string get_name() const {
-		return "SetpointPosition";
-	}
-
 	const message_map get_rx_handlers() {
 		return { /* Rx disabled */ };
 	}
@@ -80,9 +64,9 @@ public:
 private:
 	friend class SetPositionTargetLocalNEDMixin;
 	friend class TFListenerMixin;
+	ros::NodeHandle sp_nh;
 	UAS *uas;
 
-	ros::NodeHandle sp_nh;
 	ros::Subscriber setpoint_sub;
 
 	std::string frame_id;

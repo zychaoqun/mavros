@@ -7,21 +7,11 @@
  * @{
  */
 /*
- * Copyright 2014 Vladimir Ermakov.
+ * Copyright 2014,2015 Vladimir Ermakov.
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 3 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful, but
- * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
- * or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License
- * for more details.
- *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
+ * This file is part of the mavros package and subject to the license terms
+ * in the top-level LICENSE file of the mavros repository.
+ * https://github.com/mavlink/mavros/tree/master/LICENSE.md
  */
 
 #include <chrono>
@@ -148,6 +138,7 @@ public:
 class WaypointPlugin : public MavRosPlugin {
 public:
 	WaypointPlugin() :
+		wp_nh("~mission"),
 		uas(nullptr),
 		wp_state(WP_IDLE),
 		wp_retries(RETRIES_COUNT),
@@ -164,14 +155,10 @@ public:
 		RESHEDULE_DT(RESHEDULE_MS / 1000.0)
 	{ };
 
-	void initialize(UAS &uas_,
-			ros::NodeHandle &nh,
-			diagnostic_updater::Updater &diag_updater)
+	void initialize(UAS &uas_)
 	{
 		uas = &uas_;
 		wp_state = WP_IDLE;
-
-		wp_nh = ros::NodeHandle(nh, "mission");
 
 		wp_nh.param("pull_after_gcs", do_pull_after_gcs, false);
 
@@ -189,10 +176,6 @@ public:
 		uas->sig_connection_changed.connect(boost::bind(&WaypointPlugin::connection_cb, this, _1));
 	};
 
-	std::string const get_name() const {
-		return "Waypoint";
-	};
-
 	const message_map get_rx_handlers() {
 		return {
 			       MESSAGE_HANDLER(MAVLINK_MSG_ID_MISSION_ITEM, &WaypointPlugin::handle_mission_item),
@@ -206,9 +189,9 @@ public:
 
 private:
 	std::recursive_mutex mutex;
+	ros::NodeHandle wp_nh;
 	UAS *uas;
 
-	ros::NodeHandle wp_nh;
 	ros::Publisher wp_list_pub;
 	ros::ServiceServer pull_srv;
 	ros::ServiceServer push_srv;

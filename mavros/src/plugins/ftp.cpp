@@ -9,19 +9,9 @@
 /*
  * Copyright 2014 Vladimir Ermakov.
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 3 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful, but
- * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
- * or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License
- * for more details.
- *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
+ * This file is part of the mavros package and subject to the license terms
+ * in the top-level LICENSE file of the mavros repository.
+ * https://github.com/mavlink/mavros/tree/master/LICENSE.md
  */
 
 #include <chrono>
@@ -205,6 +195,7 @@ private:
 class FTPPlugin : public MavRosPlugin {
 public:
 	FTPPlugin() :
+		ftp_nh("~ftp"),
 		uas(nullptr),
 		op_state(OP_IDLE),
 		last_send_seqnr(0),
@@ -220,13 +211,9 @@ public:
 		checksum_crc32(0)
 	{ }
 
-	void initialize(UAS &uas_,
-			ros::NodeHandle &nh,
-			diagnostic_updater::Updater &diag_updater)
+	void initialize(UAS &uas_)
 	{
 		uas = &uas_;
-
-		ftp_nh = ros::NodeHandle(nh, "ftp");
 
 		list_srv = ftp_nh.advertiseService("list", &FTPPlugin::list_cb, this);
 		open_srv = ftp_nh.advertiseService("open", &FTPPlugin::open_cb, this);
@@ -240,10 +227,6 @@ public:
 		reset_srv = ftp_nh.advertiseService("reset", &FTPPlugin::reset_cb, this);
 		rename_srv = ftp_nh.advertiseService("rename", &FTPPlugin::rename_cb, this);
 		checksum_srv = ftp_nh.advertiseService("checksum", &FTPPlugin::checksum_cb, this);
-	}
-
-	std::string const get_name() const {
-		return "FTP";
 	}
 
 	const message_map get_rx_handlers() {

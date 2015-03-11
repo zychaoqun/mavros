@@ -10,19 +10,9 @@
 /*
  * Copyright 2014 Nuno Marques.
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 3 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful, but
- * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
- * or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License
- * for more details.
- *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
+ * This file is part of the mavros package and subject to the license terms
+ * in the top-level LICENSE file of the mavros repository.
+ * https://github.com/mavlink/mavros/tree/master/LICENSE.md
  */
 
 #include <mavros/mavros_plugin.h>
@@ -41,22 +31,16 @@ class SetpointVelocityPlugin : public MavRosPlugin,
 	private SetPositionTargetLocalNEDMixin<SetpointVelocityPlugin> {
 public:
 	SetpointVelocityPlugin() :
+		sp_nh("~setpoint_velocity"),
 		uas(nullptr)
 	{ };
 
-	void initialize(UAS &uas_,
-			ros::NodeHandle &nh,
-			diagnostic_updater::Updater &diag_updater)
+	void initialize(UAS &uas_)
 	{
 		uas = &uas_;
-		sp_nh = ros::NodeHandle(nh, "setpoint");
 
 		//cmd_vel usually is the topic used for velocity control in many controllers / planners
 		vel_sub = sp_nh.subscribe("cmd_vel", 10, &SetpointVelocityPlugin::vel_cb, this);
-	}
-
-	const std::string get_name() const {
-		return "SetpointVelocity";
 	}
 
 	const message_map get_rx_handlers() {
@@ -65,9 +49,9 @@ public:
 
 private:
 	friend class SetPositionTargetLocalNEDMixin;
+	ros::NodeHandle sp_nh;
 	UAS *uas;
 
-	ros::NodeHandle sp_nh;
 	ros::Subscriber vel_sub;
 
 	/* -*- mid-level helpers -*- */

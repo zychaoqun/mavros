@@ -7,21 +7,11 @@
  * @{
  */
 /*
- * Copyright 2014 Vladimir Ermakov.
+ * Copyright 2014,2015 Vladimir Ermakov.
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 3 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful, but
- * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
- * or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License
- * for more details.
- *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
+ * This file is part of the mavros package and subject to the license terms
+ * in the top-level LICENSE file of the mavros repository.
+ * https://github.com/mavlink/mavros/tree/master/LICENSE.md
  */
 
 #include <chrono>
@@ -352,6 +342,7 @@ public:
 class ParamPlugin : public MavRosPlugin {
 public:
 	ParamPlugin() :
+		param_nh("~param"),
 		uas(nullptr),
 		param_count(-1),
 		param_state(PR_IDLE),
@@ -362,12 +353,9 @@ public:
 		PARAM_TIMEOUT_DT(PARAM_TIMEOUT_MS / 1000.0)
 	{ };
 
-	void initialize(UAS &uas_,
-			ros::NodeHandle &nh,
-			diagnostic_updater::Updater &diag_updater)
+	void initialize(UAS &uas_)
 	{
 		uas = &uas_;
-		param_nh = ros::NodeHandle(nh, "param");
 
 		pull_srv = param_nh.advertiseService("pull", &ParamPlugin::pull_cb, this);
 		push_srv = param_nh.advertiseService("push", &ParamPlugin::push_cb, this);
@@ -381,10 +369,6 @@ public:
 		uas->sig_connection_changed.connect(boost::bind(&ParamPlugin::connection_cb, this, _1));
 	}
 
-	std::string const get_name() const {
-		return "Param";
-	}
-
 	const message_map get_rx_handlers() {
 		return {
 			       MESSAGE_HANDLER(MAVLINK_MSG_ID_PARAM_VALUE, &ParamPlugin::handle_param_value)
@@ -393,9 +377,9 @@ public:
 
 private:
 	std::recursive_mutex mutex;
+	ros::NodeHandle param_nh;
 	UAS *uas;
 
-	ros::NodeHandle param_nh;
 	ros::ServiceServer pull_srv;
 	ros::ServiceServer push_srv;
 	ros::ServiceServer set_srv;
