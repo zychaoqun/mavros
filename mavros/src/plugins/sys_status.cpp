@@ -461,8 +461,12 @@ private:
 			break;
 
 		case MAV_SEVERITY_DEBUG:
-		default:
 			ROS_DEBUG_STREAM_NAMED("fcu", "FCU: " << text);
+			break;
+
+		default:
+			ROS_WARN_STREAM_NAMED("fcu", "FCU: UNK(" <<
+					int(severity) << "): " << text);
 			break;
 		};
 	}
@@ -489,7 +493,7 @@ private:
 			break;
 
 		default:
-			ROS_DEBUG_STREAM_NAMED("fcu", "FCU: UNK(" <<
+			ROS_WARN_STREAM_NAMED("fcu", "FCU: UNK(" <<
 					int(severity) << "): " << text);
 			break;
 		};
@@ -498,15 +502,13 @@ private:
 	/* -*- message handlers -*- */
 
 	void handle_heartbeat(const mavlink_message_t *msg, uint8_t sysid, uint8_t compid) {
+		if (!uas->is_my_target(sysid)) {
+			ROS_DEBUG_NAMED("sys", "HEARTBEAT from [%d, %d] dropped.", sysid, compid);
+			return;
+		}
+
 		mavlink_heartbeat_t hb;
 		mavlink_msg_heartbeat_decode(msg, &hb);
-
-		auto state_msg = boost::make_shared<mavros::State>();
-
-		state_msg->header.stamp = ros::Time::now();
-		state_msg->armed = hb.base_mode & MAV_MODE_FLAG_SAFETY_ARMED;
-		state_msg->guided = hb.base_mode & MAV_MODE_FLAG_GUIDED_ENABLED;
-		state_msg->mode = uas->str_mode_v10(hb.base_mode, hb.custom_mode);
 
 		// update context && setup connection timeout
 		uas->update_heartbeat(hb.type, hb.autopilot);
@@ -514,9 +516,15 @@ private:
 		timeout_timer.stop();
 		timeout_timer.start();
 
-		hb_diag.tick(hb.type, hb.autopilot, state_msg->mode, hb.system_status);
+		// build state message after updating uas
+		auto state_msg = boost::make_shared<mavros::State>();
+		state_msg->header.stamp = ros::Time::now();
+		state_msg->armed = hb.base_mode & MAV_MODE_FLAG_SAFETY_ARMED;
+		state_msg->guided = hb.base_mode & MAV_MODE_FLAG_GUIDED_ENABLED;
+		state_msg->mode = uas->str_mode_v10(hb.base_mode, hb.custom_mode);
 
 		state_pub.publish(state_msg);
+		hb_diag.tick(hb.type, hb.autopilot, state_msg->mode, hb.system_status);
 	}
 
 	void handle_sys_status(const mavlink_message_t *msg, uint8_t sysid, uint8_t compid) {
@@ -527,7 +535,7 @@ private:
 		float curr = stat.current_battery / 100.0f;	// 10 mA or -1
 		float rem = stat.battery_remaining / 100.0f;	// or -1
 
-		mavros::BatteryStatusPtr batt_msg = boost::make_shared<mavros::BatteryStatus>();
+		auto batt_msg = boost::make_shared<mavros::BatteryStatus>();
 		batt_msg->header.stamp = ros::Time::now();
 		batt_msg->voltage = volt;
 		batt_msg->current = curr;
