@@ -19,6 +19,8 @@
 #include <array>
 #include <mutex>
 #include <atomic>
+#include <Eigen/Eigen>
+#include <Eigen/Geometry>
 #include <tf/transform_datatypes.h>
 #include <diagnostic_updater/diagnostic_updater.h>
 #include <mavconn/interface.h>
@@ -76,7 +78,10 @@ class UAS {
 public:
 	typedef std::lock_guard<std::recursive_mutex> lock_guard;
 	typedef std::unique_lock<std::recursive_mutex> unique_lock;
+
+	//! Type matching rosmsg for covariance 3x3
 	typedef boost::array<double, 9> Covariance3x3;
+	//! Type matching rosmsg for covarince 6x6
 	typedef boost::array<double, 36> Covariance6x6;
 
 	UAS();
@@ -298,11 +303,57 @@ public:
 	 */
 	static tf::Vector3 sensor_orientation_matching(MAV_SENSOR_ORIENTATION orientation);
 
+	/* -*- frame conversion utilities -*- */
+
 	static tf::Vector3 transform_frame_xyz(double _x, double _y, double _z);
 	static tf::Quaternion transform_frame_attitude_q(tf::Quaternion qo);
 	static tf::Vector3 transform_frame_attitude_rpy(double _roll, double _pitch, double _yaw);
 	static Covariance6x6 transform_frame_covariance_pose6x6(Covariance6x6 &_covariance);
 	static Covariance3x3 transform_frame_covariance_general3x3(Covariance3x3 &_covariance);
+
+	/**
+	 * @brief Convert euler angles to quaternion.
+	 *
+	 * @return quaternion, same as @p tf::quaternionFromRPY() but in Eigen format.
+	 */
+	static Eigen::Quaterniond quaternion_from_rpy(const double roll, const double pitch, const double yaw);
+
+	/**
+	 * @brief Convert euler angles to quaternion.
+	 */
+	static inline Eigen::Quaterniond quaternion_from_rpy(const Eigen::Vector3d &vec) {
+		return quaternion_from_rpy(vec.x(), vec.y(), vec.z());
+	}
+
+	/**
+	 * @brief Transform frame between ROS and FCU. (Vector3d)
+	 *
+	 * General function. Please use specialized enu-ned and ned-enu variants.
+	 */
+	static Eigen::Vector3d transform_frame(const Eigen::Vector3d &vec);
+
+	/**
+	 * @brief Transform frame between ROS and FCU. (Quaterniond)
+	 *
+	 * General function. Please use specialized enu-ned and ned-enu variants.
+	 */
+	static Eigen::Quaterniond transform_frame(const Eigen::Quaterniond &q);
+
+	/**
+	 * @brief Transform from FCU to ROS frame.
+	 */
+	template<class T>
+	static inline T transform_frame_ned_enu(const T &in) {
+		return transform_frame(in);
+	}
+
+	/**
+	 * @brief Transform from ROS to FCU frame.
+	 */
+	template<class T>
+	static inline T transform_frame_enu_ned(const T &in) {
+		return transform_frame(in);
+	}
 
 	/**
 	 * @brief Function to convert general XYZ values from ENU to NED frames

@@ -117,3 +117,41 @@ UAS::Covariance3x3 UAS::transform_frame_covariance_general3x3(UAS::Covariance3x3
 		return _covariance;
 	}
 }
+
+// Eigen based functions for test!
+
+//! +PI rotation around X (Roll) axis give us ROS or FCU representation
+static const Eigen::Quaterniond FRAME_ROTATE_Q = UAS::quaternion_from_rpy(M_PI, 0.0, 0.0);
+
+//! Transform for vector3
+static const Eigen::Transform<double, 3, Eigen::Affine> FRAME_TRANSFORM_VECTOR3(FRAME_ROTATE_Q);
+
+
+Eigen::Quaterniond UAS::quaternion_from_rpy(const double roll, const double pitch, const double yaw)
+{
+#if 0
+	// RPY - XYZ
+	return Eigen::Quaterniond(
+			Eigen::AngleAxisd(roll, Eigen::Vector3d::UnitX()) *
+			Eigen::AngleAxisd(pitch, Eigen::Vector3d::UnitY()) *
+			Eigen::AngleAxisd(yaw, Eigen::Vector3d::UnitZ())
+			);
+#else
+	// YPR - ZYX
+	return Eigen::Quaterniond(
+			Eigen::AngleAxisd(yaw, Eigen::Vector3d::UnitZ()) *
+			Eigen::AngleAxisd(pitch, Eigen::Vector3d::UnitY()) *
+			Eigen::AngleAxisd(roll, Eigen::Vector3d::UnitX())
+			);
+#endif
+}
+
+Eigen::Quaterniond UAS::transform_frame(const Eigen::Quaterniond &q)
+{
+	return FRAME_ROTATE_Q * q * FRAME_ROTATE_Q.inverse();
+}
+
+Eigen::Vector3d UAS::transform_frame(const Eigen::Vector3d &vec)
+{
+	return FRAME_TRANSFORM_VECTOR3 * vec;
+}
