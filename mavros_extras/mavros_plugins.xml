@@ -23,4 +23,7 @@
         <class name="cam_imu_sync" type="mavplugin::CamIMUSyncPlugin" base_class_type="mavplugin::MavRosPlugin">
 		<description>Publish camera trigger data for synchronisation of IMU and camera frames</description>
 	</class>
+	<class name="landing_target" type="mavplugin::LandingTargetPlugin" base_class_type="mavplugin::MavRosPlugin">
+		<description>Send landing target to FCU.</description>
+	</class>
 </library>
