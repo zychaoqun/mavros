@@ -23,7 +23,7 @@ using namespace mavros;
 // +PI rotation around X (North) axis follwed by +PI/2 rotation about Z (Down)
 // gives the ENU frame.  Similarly, a +PI rotation about X (East) followed by
 // a +PI/2 roation about Z (Up) gives the NED frame.
-static const Eigen::Quaterniond NED_ENU_Q = UAS::quaternion_from_rpy(M_PI, 0.0, M_PI_2);
+static const Eigen::Quaterniond NED_ENU_Q = UAS::quaternion_from_rpy(M_PI, 0.0, 0.0);
 
 // Static quaternion needed for rotating between aircraft and base_link frames
 // +PI rotation around X (Forward) axis transforms from Forward, Right, Down (aircraft)
